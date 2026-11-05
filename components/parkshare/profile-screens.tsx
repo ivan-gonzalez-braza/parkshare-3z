@@ -35,7 +35,7 @@ export function ProfileScreen() {
           <p className="mt-1.5 text-[15px] text-subtle">{profile.email}</p>
           <Link
             href="/perfil/editar"
-            className="mt-6 flex h-[52px] items-center rounded-full bg-brand px-8 text-[16px] font-semibold text-ink transition-[filter] hover:brightness-95"
+            className="mt-6 flex h-[52px] items-center rounded-full bg-brand px-8 text-[16px] font-semibold text-on-brand transition-[filter] hover:brightness-95"
           >
             Editar perfil
           </Link>

@@ -7,7 +7,7 @@ import { ScreenHeader } from './screen-header'
 import { TextField } from './text-field'
 
 const primaryButton =
-  'flex h-[76px] w-full items-center justify-center rounded-full bg-brand text-[21px] font-extrabold text-ink transition-[filter] hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink'
+  'flex h-[76px] w-full items-center justify-center rounded-full bg-brand text-[21px] font-extrabold text-on-brand transition-[filter] hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink'
 
 export function RegisterScreen() {
   const router = useRouter()
@@ -43,7 +43,7 @@ export function RegisterScreen() {
             </button>
             <Link
               href="/login"
-              className="flex h-[76px] w-full items-center justify-center rounded-full bg-[#b3b3b3] text-[20px] font-extrabold text-ink transition-[filter] hover:brightness-95"
+              className="flex h-[76px] w-full items-center justify-center rounded-full bg-[#b3b3b3] text-[20px] font-extrabold text-on-brand transition-[filter] hover:brightness-95"
             >
               ¿Ya tienes cuenta? Inicia sesión
             </Link>

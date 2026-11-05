@@ -20,7 +20,7 @@ export function Toggle({
       onClick={() => onChange(!checked)}
       className={cn(
         'relative h-[34px] w-[57px] shrink-0 rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand',
-        checked ? 'bg-brand' : 'bg-[#e1e4e4]',
+        checked ? 'bg-brand' : 'bg-track',
       )}
     >
       <span

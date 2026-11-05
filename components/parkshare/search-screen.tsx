@@ -34,7 +34,7 @@ export function SearchScreen() {
           <Link href="/mapa" aria-label="Volver al mapa" className="-ml-1 text-ink">
             <ArrowLeft className="size-6" aria-hidden="true" />
           </Link>
-          <div className="flex h-[62px] flex-1 items-center rounded-full border-2 border-brand bg-white pr-3 pl-5 shadow-[0_0_0_4px_rgba(253,161,102,0.15)]">
+          <div className="flex h-[62px] flex-1 items-center rounded-full border-2 border-brand bg-surface pr-3 pl-5 shadow-[0_0_0_4px_rgba(253,161,102,0.15)]">
             <label htmlFor="address" className="sr-only">Dirección</label>
             <input
               id="address"
@@ -65,7 +65,7 @@ export function SearchScreen() {
             <Link
               key={place}
               href="/mapa"
-              className="flex h-[64px] items-center gap-3 rounded-full bg-field px-6 text-[19px] font-extrabold text-ink transition-colors hover:bg-[#eaedec]"
+              className="flex h-[64px] items-center gap-3 rounded-full bg-field px-6 text-[19px] font-extrabold text-ink transition-colors hover:bg-track"
             >
               <House className="size-6 text-brand" strokeWidth={2} aria-hidden="true" />
               {place}

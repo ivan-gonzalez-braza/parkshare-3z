@@ -1,19 +1,38 @@
 'use client'
 
-import { createContext, useContext, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 
-export type FilterKey = 'carga' | 'movilidad' | 'pago' | 'descarga' | 'moto'
+export type FilterKey =
+  | 'gratuita'
+  | 'carga'
+  | 'movilidad'
+  | 'pago'
+  | 'descarga'
+  | 'moto'
+  | 'soloLibres'
 export type SpotColorKey =
   | 'gratuita'
   | 'pago'
+  | 'carga'
   | 'descarga'
   | 'movilidad'
   | 'moto'
   | 'ocupada'
 
+export const DEFAULT_FILTERS: Record<FilterKey, boolean> = {
+  gratuita: true,
+  carga: true,
+  movilidad: true,
+  pago: true,
+  descarga: true,
+  moto: true,
+  soloLibres: false,
+}
+
 export const DEFAULT_SPOT_COLORS: Record<SpotColorKey, string> = {
   gratuita: '#26c66e',
   pago: '#3477f6',
+  carga: '#8b5cf6',
   descarga: '#f4cd36',
   movilidad: '#80ccf2',
   moto: '#ff953f',
@@ -30,6 +49,7 @@ export type Profile = {
 type AppState = {
   filters: Record<FilterKey, boolean>
   toggleFilter: (key: FilterKey) => void
+  resetFilters: () => void
   spotColors: Record<SpotColorKey, string>
   setSpotColor: (key: SpotColorKey, color: string) => void
   resetSpotColors: () => void
@@ -46,13 +66,7 @@ type AppState = {
 const AppContext = createContext<AppState | null>(null)
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [filters, setFilters] = useState<Record<FilterKey, boolean>>({
-    carga: true,
-    movilidad: false,
-    pago: true,
-    descarga: false,
-    moto: false,
-  })
+  const [filters, setFilters] = useState<Record<FilterKey, boolean>>(DEFAULT_FILTERS)
   const [spotColors, setSpotColors] = useState(DEFAULT_SPOT_COLORS)
   const [darkMode, setDarkMode] = useState(false)
   const [notifications, setNotifications] = useState(true)
@@ -64,10 +78,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     photo: '/figma/elena-profile.jpg',
   })
 
+  useEffect(() => {
+    const root = document.documentElement
+    root.classList.toggle('dark', darkMode)
+    root.classList.toggle('light', !darkMode)
+    root.style.colorScheme = darkMode ? 'dark' : 'light'
+  }, [darkMode])
+
   const value = useMemo<AppState>(
     () => ({
       filters,
       toggleFilter: (key) => setFilters((prev) => ({ ...prev, [key]: !prev[key] })),
+      resetFilters: () => setFilters(DEFAULT_FILTERS),
       spotColors,
       setSpotColor: (key, color) => setSpotColors((prev) => ({ ...prev, [key]: color })),
       resetSpotColors: () => setSpotColors(DEFAULT_SPOT_COLORS),

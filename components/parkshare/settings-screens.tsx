@@ -60,6 +60,7 @@ export function SettingsScreen() {
 const COLOR_ROWS: { key: SpotColorKey; label: string }[] = [
   { key: 'gratuita', label: 'Plaza Gratuita' },
   { key: 'pago', label: 'Zona de Pago' },
+  { key: 'carga', label: 'Punto de carga' },
   { key: 'descarga', label: 'Carga y descarga' },
   { key: 'movilidad', label: 'Movilidad reducida' },
   { key: 'moto', label: 'Sitios para Moto' },
@@ -126,7 +127,7 @@ export function LanguageScreen() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Buscar idioma..."
-            className="flex-1 bg-transparent text-[16px] text-ink outline-none placeholder:text-[#a3aaad]"
+            className="flex-1 bg-transparent text-[16px] text-ink outline-none placeholder:text-faint"
           />
         </div>
         <ul className="mt-4" role="listbox" aria-label="Idiomas">
@@ -190,7 +191,7 @@ export function SecurityScreen() {
           <section key={section.title} className="mt-7">
             <h2 className="text-[16px] font-semibold text-ink">{section.title}</h2>
             {section.body.map((paragraph) => (
-              <p key={paragraph.slice(0, 24)} className="mt-2.5 text-[14px] leading-[1.6] text-[#5f686c]">
+              <p key={paragraph.slice(0, 24)} className="mt-2.5 text-[14px] leading-[1.6] text-muted-ink">
                 {paragraph}
               </p>
             ))}
