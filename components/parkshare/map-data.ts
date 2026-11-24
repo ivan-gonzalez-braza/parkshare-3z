@@ -23,11 +23,9 @@ export const SPOT_LABELS: Record<SpotType, string> = {
   moto: 'Sitio para moto',
 }
 
-// Ubicación por defecto si el navegador no tiene GPS activado (Centro de Mataró)
 export const USER_POSITION: Coords = { lat: 41.5391, lng: 2.4445 }
 
 export const SPOTS: Spot[] = [
-  // Parkings subterráneos de pago (PUMSA)
   {
     id: 'pumsa-tereses',
     lat: 41.53912,
@@ -78,8 +76,6 @@ export const SPOTS: Spot[] = [
     street: 'Plaça de Cuba, 25 (PUMSA)',
     details: 'Mercat de la Plaça de Cuba',
   },
-
-  // Solares y aparcamientos gratuitos en superficie
   {
     id: 'solar-varador',
     lat: 41.53321,
@@ -168,8 +164,6 @@ export const SPOTS: Spot[] = [
     capacity: 80,
     details: 'Solar gratuito (80 plazas)',
   },
-
-  // Tramos en calzada (zona blanca y plazas urbanas en Mataró)
   {
     id: 'puig-01',
     lat: 41.54890,
@@ -201,4 +195,121 @@ export const SPOTS: Spot[] = [
     vertical: false,
     street: 'Avinguda de Puig i Cadafalch',
     capacity: 3,
-    details: '
+    details: 'Calzada cordón · ~3 plazas',
+  },
+  {
+    id: 'girona-01',
+    lat: 41.54610,
+    lng: 2.43510,
+    type: 'gratuita',
+    busy: false,
+    vertical: false,
+    street: 'Carrer de Girona',
+    capacity: 5,
+    details: 'Calzada cordón · ~5 plazas',
+  },
+  {
+    id: 'girona-02',
+    lat: 41.54690,
+    lng: 2.43580,
+    type: 'gratuita',
+    busy: true,
+    vertical: false,
+    street: 'Carrer de Girona',
+    capacity: 4,
+    details: 'Calzada cordón · ~4 plazas',
+  },
+  {
+    id: 'girona-03',
+    lat: 41.54780,
+    lng: 2.43650,
+    type: 'gratuita',
+    busy: false,
+    vertical: true,
+    street: 'Carrer de Girona',
+    capacity: 6,
+    details: 'Calzada batería · ~6 plazas',
+  },
+  {
+    id: 'mistral-01',
+    lat: 41.54800,
+    lng: 2.43350,
+    type: 'gratuita',
+    busy: false,
+    vertical: false,
+    street: 'Ronda de Frederic Mistral',
+    capacity: 8,
+    details: 'Calzada cordón · ~8 plazas',
+  },
+  {
+    id: 'mistral-02',
+    lat: 41.54820,
+    lng: 2.43390,
+    type: 'gratuita',
+    busy: false,
+    vertical: false,
+    street: 'Ronda de Frederic Mistral',
+    capacity: 7,
+    details: 'Calzada cordón · ~7 plazas',
+  },
+  {
+    id: 'rambla-movilidad',
+    lat: 41.53820,
+    lng: 2.44490,
+    type: 'movilidad',
+    busy: false,
+    vertical: false,
+    street: 'La Rambla, 18',
+    details: 'Plaza reservada PMR',
+  },
+  {
+    id: 'biada-descarga',
+    lat: 41.53640,
+    lng: 2.44610,
+    type: 'descarga',
+    busy: false,
+    vertical: false,
+    street: 'Ronda de Barceló / Biada',
+    details: 'Zona DUM carga y descarga',
+  },
+  {
+    id: 'estacio-moto',
+    lat: 41.53530,
+    lng: 2.44720,
+    type: 'moto',
+    busy: false,
+    vertical: true,
+    street: 'Plaça de Miquel Biada (Estació)',
+    details: 'Aparcamiento motocicletas',
+  },
+]
+
+export function distanceBetweenCoords(a: Coords, b: Coords) {
+  const R = 6371000
+  const toRad = (deg: number) => (deg * Math.PI) / 180
+  const dLat = toRad(b.lat - a.lat)
+  const dLng = toRad(b.lng - a.lng)
+  const h =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) * Math.sin(dLng / 2)
+  return Math.round(R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h)))
+}
+
+export function distanceToUser(spot: Spot, referencePoint: Coords = USER_POSITION) {
+  return distanceBetweenCoords(referencePoint, { lat: spot.lat, lng: spot.lng })
+}
+
+export function isSpotVisible(spot: Spot, busy: boolean, filters: Record<SpotType | 'soloLibres', boolean>) {
+  if (!filters[spot.type]) return false
+  if (filters.soloLibres && busy) return false
+  return true
+}
+
+export function readableTextColor(hex: string) {
+  const value = hex.replace('#', '')
+  const r = parseInt(value.slice(0, 2), 16)
+  const g = parseInt(value.slice(2, 4), 16)
+  const b = parseInt(value.slice(4, 6), 16)
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+  return luminance > 0.62 ? '#1f2d31' : '#ffffff'
+}
