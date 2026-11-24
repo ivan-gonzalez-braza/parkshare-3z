@@ -8,10 +8,12 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   Car,
+  Compass,
   Menu,
   Navigation,
   Route,
   SlidersHorizontal,
+  Square,
   X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -27,11 +29,12 @@ import {
   type Spot,
   type SpotType,
   distanceBetweenCoords,
+  fetchRealSpotsNear,
   isSpotVisible,
 } from './map-data'
 
 const LEGEND_TYPES: SpotType[] = ['gratuita', 'pago', 'carga', 'descarga', 'movilidad', 'moto']
-const DESTINATION_RADIUS = 600 // metros alrededor del destino donde se muestran plazas
+const DESTINATION_RADIUS = 750
 
 function MapScreenContent() {
   const router = useRouter()
@@ -42,29 +45,41 @@ function MapScreenContent() {
   const [busyOverrides, setBusyOverrides] = useState<Record<string, boolean>>({})
   const [selected, setSelected] = useState<Spot | null>(null)
   const [userLocation, setUserLocation] = useState<Coords>(USER_POSITION)
-  const [routeInfo, setRouteInfo] = useState<{ distanceKm: string; durationMin: number } | null>(null)
+  const [heading, setHeading] = useState<number | null>(null)
+  const [isNavigating, setIsNavigating] = useState(false)
+  const [destinationSpots, setDestinationSpots] = useState<Spot[]>([])
+  const [loadingSpots, setLoadingSpots] = useState(false)
+  const [routeInfo, setRouteInfo] = useState<{
+    distanceKm: string
+    durationMin: number
+    nextStep?: string
+  } | null>(null)
   const [message, setMessage] = useState('Localizando tu ubicación...')
   const closeFilters = useCallback(() => setFiltersOpen(false), [])
 
-  // 1. Obtener GPS real del usuario al cargar
   useEffect(() => {
     if (!('geolocation' in navigator)) {
       setMessage('Ubicación predeterminada: Centro de Mataró')
       return
     }
-    navigator.geolocation.getCurrentPosition(
+
+    const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+        if (typeof pos.coords.heading === 'number' && !Number.isNaN(pos.coords.heading)) {
+          setHeading(pos.coords.heading)
+        }
         setMessage('Ubicación GPS conectada')
       },
       () => {
         setMessage('GPS no disponible · Usando Centro de Mataró')
       },
-      { enableHighAccuracy: true, timeout: 8000 },
+      { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 },
     )
+
+    return () => navigator.geolocation.clearWatch(watchId)
   }, [])
 
-  // 2. Leer destino elegido en el buscador
   const destination = useMemo(() => {
     const lat = parseFloat(searchParams.get('destLat') || '')
     const lng = parseFloat(searchParams.get('destLng') || '')
@@ -73,29 +88,39 @@ function MapScreenContent() {
     return { lat, lng, name }
   }, [searchParams])
 
-  // 3. Filtrar plazas: si hay destino, SOLO mostramos las que están cerca del destino (libres y ocupadas)
-  const visibleAreaSpots = useMemo(() => {
-    if (!destination) return SPOTS
-    return SPOTS.filter(
-      (spot) => distanceBetweenCoords(destination, { lat: spot.lat, lng: spot.lng }) <= DESTINATION_RADIUS,
-    )
+  useEffect(() => {
+    if (!destination) {
+      setIsNavigating(false)
+      setDestinationSpots([])
+      return
+    }
+
+    let cancelled = false
+    setLoadingSpots(true)
+
+    fetchRealSpotsNear(destination, DESTINATION_RADIUS).then((spotsFound) => {
+      if (!cancelled) {
+        setDestinationSpots(spotsFound)
+        setLoadingSpots(false)
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
   }, [destination])
+
+  const visibleAreaSpots = destination ? destinationSpots : SPOTS
 
   const referencePoint = destination ?? userLocation
   const isBusy = (spot: Spot) => busyOverrides[spot.id] ?? spot.busy
 
   const nearbyFree = visibleAreaSpots.filter(
-    (spot) =>
-      !isBusy(spot) &&
-      isSpotVisible(spot, false, filters) &&
-      distanceBetweenCoords(referencePoint, { lat: spot.lat, lng: spot.lng }) <= DESTINATION_RADIUS,
+    (spot) => !isBusy(spot) && isSpotVisible(spot, false, filters),
   ).length
 
   const nearbyBusy = visibleAreaSpots.filter(
-    (spot) =>
-      isBusy(spot) &&
-      isSpotVisible(spot, true, filters) &&
-      distanceBetweenCoords(referencePoint, { lat: spot.lat, lng: spot.lng }) <= DESTINATION_RADIUS,
+    (spot) => isBusy(spot) && isSpotVisible(spot, true, filters),
   ).length
 
   const activeTypes = LEGEND_TYPES.filter((type) => filters[type])
@@ -104,7 +129,22 @@ function MapScreenContent() {
   const clearDestination = () => {
     setSelected(null)
     setRouteInfo(null)
+    setIsNavigating(false)
+    setDestinationSpots([])
     router.push('/mapa')
+  }
+
+  const handleToggleNavigation = () => {
+    if (!destination) return
+    setIsNavigating((prev) => {
+      const next = !prev
+      setMessage(
+        next
+          ? `Navegación iniciada hacia ${destination.name}`
+          : 'Navegación pausada · Vista previa de ruta',
+      )
+      return next
+    })
   }
 
   const handleAction = (action: 'ocupo' | 'dejo') => {
@@ -129,7 +169,9 @@ function MapScreenContent() {
           <MapCanvas
             spots={visibleAreaSpots}
             userLocation={userLocation}
+            heading={heading}
             destination={destination}
+            isNavigating={isNavigating}
             searchRadius={DESTINATION_RADIUS}
             busyOverrides={busyOverrides}
             selectedId={selected?.id ?? null}
@@ -137,63 +179,89 @@ function MapScreenContent() {
             onRouteCalculated={setRouteInfo}
           />
 
-          <div className="absolute inset-x-5 top-4 z-10 flex h-[72px] items-center gap-3 rounded-full bg-surface pr-3 pl-6 shadow-[0_6px_24px_rgba(31,45,49,0.12)]">
-            <button
-              type="button"
-              onClick={() => setFiltersOpen(true)}
-              aria-label="Abrir filtros de mapa"
-              className="text-ink"
-            >
-              <Menu className="size-6" aria-hidden="true" />
-            </button>
-            <span className="h-8 w-px bg-line" aria-hidden="true" />
-            <Link href="/buscar" className="min-w-0 flex-1 truncate text-[19px] font-semibold text-ink">
-              {destination ? destination.name : '¿A dónde vas?'}
-            </Link>
-            {destination ? (
+          {isNavigating && destination ? (
+            <div className="absolute inset-x-5 top-4 z-10 flex items-center gap-3 rounded-[26px] bg-[#1f2d31] p-4 text-white shadow-[0_8px_28px_rgba(31,45,49,0.28)]">
+              <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-brand text-on-brand">
+                <Compass className="size-6 animate-pulse" aria-hidden="true" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[16px] font-extrabold">
+                  {routeInfo?.nextStep || `En ruta hacia ${destination.name}`}
+                </p>
+                <p className="text-[13px] text-white/80">
+                  {routeInfo ? `${routeInfo.distanceKm} km · ${routeInfo.durationMin} min restantes` : 'Calculando...'}
+                </p>
+              </div>
               <button
                 type="button"
-                onClick={clearDestination}
-                aria-label="Quitar destino"
-                className="flex size-8 shrink-0 items-center justify-center rounded-full bg-field text-subtle hover:text-ink"
+                onClick={handleToggleNavigation}
+                aria-label="Detener ruta"
+                className="flex size-10 shrink-0 items-center justify-center rounded-full bg-white/15 text-white hover:bg-white/25"
               >
-                <X className="size-4" strokeWidth={2.5} aria-hidden="true" />
+                <X className="size-5" aria-hidden="true" />
               </button>
-            ) : null}
-            <Link href="/perfil" aria-label="Mi perfil" className="shrink-0 rounded-full ring-2 ring-brand">
-              <Image
-                src={profile.photo || '/placeholder.svg'}
-                alt=""
-                width={48}
-                height={48}
-                className="size-12 rounded-full object-cover"
-              />
-            </Link>
-          </div>
-
-          <div className="pointer-events-none absolute top-[104px] left-6 z-10 flex flex-wrap items-center gap-2 pr-14">
-            <span className="flex h-[34px] items-center gap-2 rounded-full bg-surface px-3 text-[13px] font-extrabold text-ink shadow-[0_2px_10px_rgba(31,45,49,0.1)]">
-              <span className="size-2 rounded-full bg-free" aria-hidden="true" />
-              {routeInfo ? (
-                <span className="flex items-center gap-1.5">
-                  <Route className="size-3.5 text-brand" aria-hidden="true" />
-                  Ruta más corta: {routeInfo.distanceKm} km ({routeInfo.durationMin} min)
-                </span>
-              ) : (
-                'ParkShare · En directo'
-              )}
-            </span>
-            {hiddenCount > 0 ? (
+            </div>
+          ) : (
+            <div className="absolute inset-x-5 top-4 z-10 flex h-[72px] items-center gap-3 rounded-full bg-surface pr-3 pl-6 shadow-[0_6px_24px_rgba(31,45,49,0.12)]">
               <button
                 type="button"
                 onClick={() => setFiltersOpen(true)}
-                className="pointer-events-auto flex h-[34px] items-center gap-1.5 rounded-full bg-brand px-3 text-[13px] font-extrabold text-on-brand shadow-[0_2px_10px_rgba(31,45,49,0.1)]"
+                aria-label="Abrir filtros de mapa"
+                className="text-ink"
               >
-                <SlidersHorizontal className="size-3.5" aria-hidden="true" />
-                Filtros activos
+                <Menu className="size-6" aria-hidden="true" />
               </button>
-            ) : null}
-          </div>
+              <span className="h-8 w-px bg-line" aria-hidden="true" />
+              <Link href="/buscar" className="min-w-0 flex-1 truncate text-[19px] font-semibold text-ink">
+                {destination ? destination.name : '¿A dónde vas?'}
+              </Link>
+              {destination ? (
+                <button
+                  type="button"
+                  onClick={clearDestination}
+                  aria-label="Quitar destino"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-full bg-field text-subtle hover:text-ink"
+                >
+                  <X className="size-4" strokeWidth={2.5} aria-hidden="true" />
+                </button>
+              ) : null}
+              <Link href="/perfil" aria-label="Mi perfil" className="shrink-0 rounded-full ring-2 ring-brand">
+                <Image
+                  src={profile.photo || '/placeholder.svg'}
+                  alt=""
+                  width={48}
+                  height={48}
+                  className="size-12 rounded-full object-cover"
+                />
+              </Link>
+            </div>
+          )}
+
+          {!isNavigating ? (
+            <div className="pointer-events-none absolute top-[104px] left-6 z-10 flex flex-wrap items-center gap-2 pr-14">
+              <span className="flex h-[34px] items-center gap-2 rounded-full bg-surface px-3 text-[13px] font-extrabold text-ink shadow-[0_2px_10px_rgba(31,45,49,0.1)]">
+                <span className="size-2 rounded-full bg-free" aria-hidden="true" />
+                {routeInfo ? (
+                  <span className="flex items-center gap-1.5">
+                    <Route className="size-3.5 text-brand" aria-hidden="true" />
+                    Ruta más corta: {routeInfo.distanceKm} km ({routeInfo.durationMin} min)
+                  </span>
+                ) : (
+                  'ParkShare · Mataró en directo'
+                )}
+              </span>
+              {hiddenCount > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setFiltersOpen(true)}
+                  className="pointer-events-auto flex h-[34px] items-center gap-1.5 rounded-full bg-brand px-3 text-[13px] font-extrabold text-on-brand shadow-[0_2px_10px_rgba(31,45,49,0.1)]"
+                >
+                  <SlidersHorizontal className="size-3.5" aria-hidden="true" />
+                  Filtros activos
+                </button>
+              ) : null}
+            </div>
+          ) : null}
 
           <div
             className="pointer-events-none absolute top-[110px] right-10 z-10 flex flex-col items-center text-[11px] font-bold text-ink"
@@ -229,14 +297,43 @@ function MapScreenContent() {
           className="relative z-20 -mt-6 rounded-t-[28px] bg-surface px-6 pt-2.5 pb-7 shadow-[0_-6px_24px_rgba(31,45,49,0.08)]"
         >
           <div className="mx-auto h-[5px] w-10 rounded-full bg-handle" aria-hidden="true" />
-          <h2 id="nearby-title" className="mt-5 text-[23px] font-extrabold text-ink">
-            {destination ? `Plazas junto a ${destination.name}` : 'Aparcamiento cerca de ti'}
-          </h2>
-          <p className="mt-0.5 text-[15px] text-subtle">
-            {nearbyFree} {nearbyFree === 1 ? 'libre' : 'libres'} · {nearbyBusy}{' '}
-            {nearbyBusy === 1 ? 'ocupada' : 'ocupadas'} (radio {DESTINATION_RADIUS} m)
-          </p>
-          <div className="mt-5 grid grid-cols-2 gap-3">
+          <div className="mt-4 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h2 id="nearby-title" className="truncate text-[22px] font-extrabold text-ink">
+                {destination ? `Plazas en ${destination.name}` : 'Aparcamiento en Mataró'}
+              </h2>
+              <p className="mt-0.5 text-[14px] text-subtle">
+                {loadingSpots
+                  ? 'Buscando plazas reales en la zona...'
+                  : `${nearbyFree} ${nearbyFree === 1 ? 'libre' : 'libres'} · ${nearbyBusy} ${nearbyBusy === 1 ? 'ocupada' : 'ocupadas'} (radio ${DESTINATION_RADIUS} m)`}
+              </p>
+            </div>
+
+            {destination ? (
+              <button
+                type="button"
+                onClick={handleToggleNavigation}
+                className={cn(
+                  'flex h-[52px] shrink-0 items-center gap-2 rounded-full px-5 text-[16px] font-extrabold shadow-[0_4px_14px_rgba(31,45,49,0.16)] transition-transform active:scale-95',
+                  isNavigating ? 'bg-busy text-white' : 'bg-brand text-on-brand',
+                )}
+              >
+                {isNavigating ? (
+                  <>
+                    <Square className="size-4 fill-current" aria-hidden="true" />
+                    Parar
+                  </>
+                ) : (
+                  <>
+                    <Navigation className="size-4 fill-current" aria-hidden="true" />
+                    Iniciar ruta
+                  </>
+                )}
+              </button>
+            ) : null}
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-3">
             <ActionButton
               label="Ocupo plaza"
               onClick={() => handleAction('ocupo')}
@@ -250,7 +347,7 @@ function MapScreenContent() {
               Arrow={ArrowUpRight}
             />
           </div>
-          <p className="mt-5 flex items-center justify-center gap-2 text-[14px] text-ink" aria-live="polite">
+          <p className="mt-4 flex items-center justify-center gap-2 text-[14px] text-ink" aria-live="polite">
             <span className="size-2 rounded-full bg-free" aria-hidden="true" />
             {message}
           </p>
@@ -348,7 +445,7 @@ function ActionButton({
       type="button"
       onClick={onClick}
       className={cn(
-        'flex h-[100px] flex-col items-center justify-center gap-2 rounded-[24px] text-[19px] font-extrabold transition-[filter] hover:brightness-[0.97] active:brightness-95',
+        'flex h-[92px] flex-col items-center justify-center gap-2 rounded-[24px] text-[19px] font-extrabold transition-[filter] hover:brightness-[0.97] active:brightness-95',
         variant === 'primary' ? 'bg-brand text-on-brand' : 'bg-brand-soft text-ink',
       )}
     >
