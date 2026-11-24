@@ -16,7 +16,6 @@ export default function MataroMap() {
   useEffect(() => {
     if (!mapContainerRef.current) return;
 
-    // 1. Cargar CSS de Leaflet si no existe
     if (!document.getElementById("leaflet-css")) {
       const link = document.createElement("link");
       link.id = "leaflet-css";
@@ -37,7 +36,14 @@ export default function MataroMap() {
         attribution: "&copy; OpenStreetMap contributors",
       }).addTo(map);
 
-      // Marcadores de parkings y solares
+      const defaultIcon = L.icon({
+        iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+        shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+        iconSize: [25, 41],
+        iconAnchor: [12, 41],
+      });
+      L.Marker.prototype.options.icon = defaultIcon;
+
       APARCAMIENTOS_MATARO.forEach((park) => {
         L.marker([park.coordenadas.lat, park.coordenadas.lng])
           .addTo(map)
@@ -46,7 +52,6 @@ export default function MataroMap() {
           );
       });
 
-      // Marcadores individuales en calzada
       TRAMOS_CALZADA_MATARO.forEach((tramo) => {
         tramo.puntos_estacionamiento.forEach((punto) => {
           L.marker([punto.lat, punto.lng])
@@ -58,7 +63,6 @@ export default function MataroMap() {
       });
     };
 
-    // 2. Cargar JS de Leaflet si no existe, o iniciar directamente
     if (window.L) {
       initMap();
     } else {
