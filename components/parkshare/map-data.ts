@@ -85,7 +85,7 @@ export const SPOTS: Spot[] = [
 
 export async function fetchRealSpotsNear(
   dest: Coords & { name: string },
-  radiusMeters = 750,
+  radiusMeters = 500,
 ): Promise<Spot[]> {
   const localMatches = SPOTS.filter(
     (spot) => distanceBetweenCoords(dest, { lat: spot.lat, lng: spot.lng }) <= radiusMeters,
@@ -159,7 +159,7 @@ export async function fetchRealSpotsNear(
   }
 
   if (combined.length < 35) {
-    const rings = [140, 260, 390, 520, 660]
+    const rings = [90, 180, 270, 360, 450]
     const angles = [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330]
     const candidatePoints: { lat: number; lng: number; idx: number }[] = []
 
