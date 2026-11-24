@@ -34,7 +34,7 @@ import {
 } from './map-data'
 
 const LEGEND_TYPES: SpotType[] = ['gratuita', 'pago', 'carga', 'descarga', 'movilidad', 'moto']
-const DESTINATION_RADIUS = 750
+const DESTINATION_RADIUS = 500
 
 function MapScreenContent() {
   const router = useRouter()
