@@ -83,14 +83,13 @@ export const SPOTS: Spot[] = [
   { id: 'girona-02', lat: 41.54690, lng: 2.43580, type: 'gratuita', busy: true, vertical: false, street: 'Calzada · Carrer de Girona' },
 ]
 
-// Interpola puntos siguiendo el sentido real de cada tramo de calle cada `stepMeters` metros
-function sampleAlongCoords(points: Coords[], stepMeters = 36): Coords[] {
+function sampleAlongCoords(points: Coords[], stepMeters = 45): Coords[] {
   const sampled: Coords[] = []
   for (let i = 0; i < points.length - 1; i++) {
     const p1 = points[i]
     const p2 = points[i + 1]
     const segLen = distanceBetweenCoords(p1, p2)
-    if (segLen < 10) continue
+    if (segLen < 12) continue
 
     const steps = Math.max(1, Math.floor(segLen / stepMeters))
     for (let s = 0; s <= steps; s++) {
@@ -110,7 +109,7 @@ function offsetCoord(origin: Coords, northMeters: number, eastMeters: number): C
   return { lat: origin.lat + dLat, lng: origin.lng + dLng }
 }
 
-// Recorre la red real de calles dentro del radio usando OSRM y reparte plazas siguiendo el sentido de cada calle
+// Cuadrícula de micro-rutas por calles interiores y secundarias dentro del radio
 export async function fetchRealSpotsNear(
   dest: Coords & { name: string },
   radiusMeters = 500,
@@ -121,7 +120,7 @@ export async function fetchRealSpotsNear(
 
   const combined: Spot[] = [...localMatches]
 
-  const tryAddSpot = (candidate: Spot, minGap = 34) => {
+  const tryAddSpot = (candidate: Spot, minGap = 44) => {
     if (distanceBetweenCoords(dest, { lat: candidate.lat, lng: candidate.lng }) > radiusMeters) return
     const tooClose = combined.some(
       (m) => distanceBetweenCoords({ lat: candidate.lat, lng: candidate.lng }, { lat: m.lat, lng: m.lng }) < minGap,
@@ -129,31 +128,25 @@ export async function fetchRealSpotsNear(
     if (!tooClose) combined.push(candidate)
   }
 
-  // Puntos cardinales y diagonales alrededor del destino (dentro del radio de 500 m)
-  const r = Math.round(radiusMeters * 0.85)
-  const d = Math.round(r * 0.7)
-  const perimeterPoints: Coords[] = [
-    offsetCoord(dest, r, 0),      // Norte
-    offsetCoord(dest, d, d),      // Noreste
-    offsetCoord(dest, 0, r),      // Este
-    offsetCoord(dest, -d, d),     // Sureste
-    offsetCoord(dest, -r, 0),     // Sur
-    offsetCoord(dest, -d, -d),    // Suroeste
-    offsetCoord(dest, 0, -r),     // Oeste
-    offsetCoord(dest, d, -d),     // Noroeste
-  ]
+  // Crear malla 4x4 dentro del círculo para obligar a OSRM a entrar por calles secundarias e interiores
+  const lanes = [-340, -130, 130, 340]
+  const edge = 430
+  const routePairs: [Coords, Coords][] = []
 
-  // Trazar 4 circuitos perimetrales y 4 radiales por las calles reales del barrio con OSRM
-  const routePairs: [Coords, Coords][] = [
-    [perimeterPoints[0], perimeterPoints[4]], // Norte -> Sur pasando por calles del barrio
-    [perimeterPoints[2], perimeterPoints[6]], // Este -> Oeste
-    [perimeterPoints[1], perimeterPoints[5]], // Noreste -> Suroeste
-    [perimeterPoints[3], perimeterPoints[7]], // Sureste -> Noroeste
-    [perimeterPoints[0], perimeterPoints[2]], // Arco Norte -> Este
-    [perimeterPoints[2], perimeterPoints[4]], // Arco Este -> Sur
-    [perimeterPoints[4], perimeterPoints[6]], // Arco Sur -> Oeste
-    [perimeterPoints[6], perimeterPoints[0]], // Arco Oeste -> Norte
-  ]
+  for (const offset of lanes) {
+    // Barridos verticales (Norte <-> Sur) por cada franja del barrio
+    routePairs.push([offsetCoord(dest, edge, offset), offsetCoord(dest, -edge, offset)])
+    // Barridos horizontales (Oeste <-> Este) por cada franja del barrio
+    routePairs.push([offsetCoord(dest, offset, -edge), offsetCoord(dest, offset, edge)])
+  }
+
+  // Añadir 8 tramos cortos entre manzanas interiores para cubrir callejones y transversales
+  const innerOffsets = [-220, -75, 75, 220]
+  for (let i = 0; i < innerOffsets.length; i++) {
+    const a = innerOffsets[i]
+    const b = innerOffsets[(i + 2) % innerOffsets.length]
+    routePairs.push([offsetCoord(dest, a, b), offsetCoord(dest, -a, -b)])
+  }
 
   await Promise.all(
     routePairs.map(async ([from, to], routeIdx) => {
@@ -162,58 +155,39 @@ export async function fetchRealSpotsNear(
         const res = await fetch(url)
         if (!res.ok) return
         const data = await res.json()
-        const route = data?.routes?.[0]
-        const steps = route?.legs?.[0]?.steps
+        const steps = data?.routes?.[0]?.legs?.[0]?.steps
 
-        if (Array.isArray(steps) && steps.length > 0) {
-          steps.forEach((step: any, stepIdx: number) => {
-            const coordsList: Coords[] = (step?.geometry?.coordinates || []).map(
-              ([lng, lat]: [number, number]) => ({ lat, lng }),
-            )
-            if (coordsList.length < 2) return
+        if (!Array.isArray(steps)) return
 
-            const roadName = step.name ? `Calzada · ${step.name}` : `Calzada junto a ${dest.name}`
-            const sampled = sampleAlongCoords(coordsList, 36)
-
-            sampled.forEach((pt, ptIdx) => {
-              const seed = routeIdx * 31 + stepIdx * 7 + ptIdx
-              const types: SpotType[] = ['gratuita', 'gratuita', 'gratuita', 'pago', 'carga', 'movilidad', 'moto']
-              const spotType = types[seed % types.length]
-              const isVertical = seed % 2 === 1
-
-              tryAddSpot({
-                id: `osrm-street-${routeIdx}-${stepIdx}-${ptIdx}`,
-                lat: pt.lat,
-                lng: pt.lng,
-                type: spotType,
-                busy: seed % 3 === 0,
-                vertical: isVertical,
-                street: step.name
-                  ? `Calzada ${isVertical ? 'batería' : 'cordón'} · ${step.name}`
-                  : roadName,
-              })
-            })
-          })
-        } else if (Array.isArray(route?.geometry?.coordinates)) {
-          const coordsList: Coords[] = route.geometry.coordinates.map(
+        steps.forEach((step: any, stepIdx: number) => {
+          const coordsList: Coords[] = (step?.geometry?.coordinates || []).map(
             ([lng, lat]: [number, number]) => ({ lat, lng }),
           )
-          const sampled = sampleAlongCoords(coordsList, 36)
+          if (coordsList.length < 2) return
+
+          const sampled = sampleAlongCoords(coordsList, 46)
+
           sampled.forEach((pt, ptIdx) => {
-            const seed = routeIdx * 19 + ptIdx
+            const seed = routeIdx * 29 + stepIdx * 7 + ptIdx
+            const types: SpotType[] = ['gratuita', 'gratuita', 'gratuita', 'pago', 'carga', 'movilidad', 'moto']
+            const spotType = types[seed % types.length]
+            const isVertical = seed % 2 === 1
+
             tryAddSpot({
-              id: `osrm-line-${routeIdx}-${ptIdx}`,
+              id: `osrm-grid-${routeIdx}-${stepIdx}-${ptIdx}`,
               lat: pt.lat,
               lng: pt.lng,
-              type: seed % 4 === 0 ? 'pago' : 'gratuita',
+              type: spotType,
               busy: seed % 3 === 0,
-              vertical: seed % 2 === 1,
-              street: `Calzada · ${dest.name}`,
+              vertical: isVertical,
+              street: step.name
+                ? `Calzada ${isVertical ? 'batería' : 'cordón'} · ${step.name}`
+                : `Calzada · ${dest.name}`,
             })
           })
-        }
+        })
       } catch {
-        // Ignorar ruta individual si falla
+        // Ignorar tramo si falla
       }
     }),
   )
