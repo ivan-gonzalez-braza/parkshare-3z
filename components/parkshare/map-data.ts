@@ -83,6 +83,31 @@ export const SPOTS: Spot[] = [
   { id: 'girona-02', lat: 41.54690, lng: 2.43580, type: 'gratuita', busy: true, vertical: false, street: 'Calzada · Carrer de Girona' },
 ]
 
+// Interpola puntos siguiendo el sentido real de cada tramo de calle cada `stepMeters` metros
+function sampleAlongPolyline(
+  points: { lat: number; lon: number }[],
+  stepMeters = 32,
+): Coords[] {
+  const sampled: Coords[] = []
+  for (let i = 0; i < points.length - 1; i++) {
+    const p1 = { lat: points[i].lat, lng: points[i].lon }
+    const p2 = { lat: points[i + 1].lat, lng: points[i + 1].lon }
+    const segLen = distanceBetweenCoords(p1, p2)
+    if (segLen < 8) continue
+
+    const steps = Math.max(1, Math.floor(segLen / stepMeters))
+    for (let s = 0; s <= steps; s++) {
+      const t = s / steps
+      sampled.push({
+        lat: p1.lat + (p2.lat - p1.lat) * t,
+        lng: p1.lng + (p2.lng - p1.lng) * t,
+      })
+    }
+  }
+  return sampled
+}
+
+// Consulta en tiempo real a OpenStreetMap e interpola plazas siguiendo el trazado de cada calle en el radio
 export async function fetchRealSpotsNear(
   dest: Coords & { name: string },
   radiusMeters = 500,
@@ -93,7 +118,7 @@ export async function fetchRealSpotsNear(
 
   const combined: Spot[] = [...localMatches]
 
-  const tryAddSpot = (candidate: Spot, minGap = 32) => {
+  const tryAddSpot = (candidate: Spot, minGap = 28) => {
     if (distanceBetweenCoords(dest, { lat: candidate.lat, lng: candidate.lng }) > radiusMeters) return
     const tooClose = combined.some(
       (m) => distanceBetweenCoords({ lat: candidate.lat, lng: candidate.lng }, { lat: m.lat, lng: m.lng }) < minGap,
@@ -101,44 +126,81 @@ export async function fetchRealSpotsNear(
     if (!tooClose) combined.push(candidate)
   }
 
-  try {
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 5000)
+  const endpoints = [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+  ]
 
-    const query = `[out:json][timeout:5];(way["highway"~"^(residential|tertiary|unclassified|secondary)$"]["name"](around:${radiusMeters},${dest.lat},${dest.lng});node["amenity"="parking"](around:${radiusMeters},${dest.lat},${dest.lng});way["amenity"="parking"](around:${radiusMeters},${dest.lat},${dest.lng}););out geom 100;`
+  const query = `[out:json][timeout:8];(way["highway"~"^(residential|tertiary|unclassified|living_street|secondary)$"]["name"](around:${radiusMeters},${dest.lat},${dest.lng});node["amenity"="parking"](around:${radiusMeters},${dest.lat},${dest.lng});way["amenity"="parking"](around:${radiusMeters},${dest.lat},${dest.lng});node["amenity"="charging_station"](around:${radiusMeters},${dest.lat},${dest.lng}););out geom;`
 
-    const res = await fetch('https://overpass.kumi.systems/api/interpreter', {
-      method: 'POST',
-      body: query,
-      signal: controller.signal,
-    })
-    clearTimeout(timeoutId)
+  for (const url of endpoints) {
+    try {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 6500)
 
-    const data = await res.json()
-    const elements = Array.isArray(data?.elements) ? data.elements : []
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+        body: `data=${encodeURIComponent(query)}`,
+        signal: controller.signal,
+      })
+      clearTimeout(timeoutId)
 
-    elements.forEach((el: any, idx: number) => {
-      const tags = el.tags || {}
-      const isRoad = Boolean(tags.highway)
-      const rawName = tags.name || tags['addr:street'] || dest.name
-      const type: SpotType =
-        tags.fee === 'yes' || tags.parking === 'underground' ? 'pago' : 'gratuita'
-      const numericId = Number(el.id || idx)
+      if (!res.ok) continue
+      const data = await res.json()
+      const elements = Array.isArray(data?.elements) ? data.elements : []
+      if (elements.length === 0) continue
 
-      if (Array.isArray(el.geometry) && el.geometry.length > 1 && isRoad) {
-        el.geometry.forEach((pt: { lat: number; lon: number }, ptIdx: number) => {
-          if (typeof pt.lat !== 'number' || typeof pt.lon !== 'number') return
-          tryAddSpot({
-            id: `osm-road-${el.id}-${ptIdx}`,
-            lat: pt.lat,
-            lng: pt.lon,
-            type,
-            busy: (numericId + ptIdx) % 3 === 0,
-            vertical: ptIdx % 2 === 1,
-            street: `Calzada ${ptIdx % 2 === 1 ? 'batería' : 'cordón'} · ${rawName}`,
+      elements.forEach((el: any, idx: number) => {
+        const tags = el.tags || {}
+        const laneValues = [
+          tags['parking:lane:both'],
+          tags['parking:lane:left'],
+          tags['parking:lane:right'],
+          tags['parking:both'],
+          tags['parking:left'],
+          tags['parking:right'],
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+
+        if (laneValues.includes('no_parking') || laneValues.includes('no_stopping') || laneValues === 'no') {
+          return
+        }
+
+        const isRoad = Boolean(tags.highway)
+        const isPerpendicular =
+          laneValues.includes('perpendicular') ||
+          laneValues.includes('diagonal') ||
+          tags.parking === 'street_side'
+
+        const rawName = tags.name || tags['addr:street'] || dest.name
+        let type: SpotType = 'gratuita'
+        if (tags.amenity === 'charging_station') type = 'carga'
+        else if (tags.fee === 'yes' || tags.parking === 'underground' || laneValues.includes('ticket')) {
+          type = 'pago'
+        }
+
+        const numericId = Number(el.id || idx)
+
+        // Recorrer la calle en el sentido de su trazado interpolando plazas cada 32 metros
+        if (Array.isArray(el.geometry) && el.geometry.length > 1 && isRoad) {
+          const lineCoords = sampleAlongPolyline(el.geometry, 32)
+          lineCoords.forEach((pt, ptIdx) => {
+            tryAddSpot({
+              id: `osm-road-${el.id}-${ptIdx}`,
+              lat: pt.lat,
+              lng: pt.lng,
+              type,
+              busy: (numericId + ptIdx) % 3 === 0,
+              vertical: isPerpendicular || ptIdx % 2 === 1,
+              street: `Calzada ${isPerpendicular || ptIdx % 2 === 1 ? 'batería' : 'cordón'} · ${rawName}`,
+            })
           })
-        })
-      } else {
+          return
+        }
+
         const lat = el.lat ?? el.geometry?.[0]?.lat
         const lng = el.lon ?? el.geometry?.[0]?.lon
         if (typeof lat === 'number' && typeof lng === 'number') {
@@ -152,59 +214,12 @@ export async function fetchRealSpotsNear(
             street: rawName,
           })
         }
-      }
-    })
-  } catch {
-    // Continuar con la red viaria OSRM si Overpass no responde a tiempo
-  }
+      })
 
-  if (combined.length < 35) {
-    const rings = [90, 180, 270, 360, 450]
-    const angles = [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330]
-    const candidatePoints: { lat: number; lng: number; idx: number }[] = []
-
-    let counter = 0
-    for (const r of rings) {
-      for (const deg of angles) {
-        const rad = (deg * Math.PI) / 180
-        const dLat = (r * Math.cos(rad)) / 111320
-        const dLng = (r * Math.sin(rad)) / (111320 * Math.cos((dest.lat * Math.PI) / 180))
-        candidatePoints.push({ lat: dest.lat + dLat, lng: dest.lng + dLng, idx: counter++ })
-      }
+      break // Ya obtuvimos datos de un servidor Overpass, no hace falta consultar el segundo
+    } catch {
+      // Probar el siguiente servidor Overpass
     }
-
-    await Promise.all(
-      candidatePoints.slice(0, 48).map(async (pt) => {
-        try {
-          const r = await fetch(
-            `https://router.project-osrm.org/nearest/v1/driving/${pt.lng},${pt.lat}?number=1`,
-          )
-          const j = await r.json()
-          const wp = j?.waypoints?.[0]
-          if (!wp?.location || wp.distance > 60) return
-          const [snappedLng, snappedLat] = wp.location
-
-          const roadName = wp.name ? `Calzada · ${wp.name}` : `Calzada junto a ${dest.name}`
-          const types: SpotType[] = ['gratuita', 'gratuita', 'gratuita', 'pago', 'carga', 'movilidad', 'moto']
-          const spotType = types[pt.idx % types.length]
-
-          tryAddSpot(
-            {
-              id: `road-snap-${dest.lat.toFixed(4)}-${pt.idx}`,
-              lat: snappedLat,
-              lng: snappedLng,
-              type: spotType,
-              busy: pt.idx % 3 === 1,
-              vertical: pt.idx % 2 === 0,
-              street: roadName,
-            },
-            35,
-          )
-        } catch {
-          // Ignorar punto individual si falla
-        }
-      }),
-    )
   }
 
   return combined
