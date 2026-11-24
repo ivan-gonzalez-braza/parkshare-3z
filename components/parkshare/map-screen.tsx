@@ -1,33 +1,111 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { ArrowDownLeft, ArrowUpRight, Car, Menu, Navigation, SlidersHorizontal, X } from 'lucide-react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  Car,
+  Menu,
+  Navigation,
+  Route,
+  SlidersHorizontal,
+  X,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AppShell } from './app-shell'
 import { FiltersSheet } from './filters-sheet'
 import { MapCanvas } from './map-canvas'
 import { type SpotColorKey, useApp } from './app-provider'
-import { SPOT_LABELS, SPOTS, type Spot, type SpotType, distanceToUser, isSpotVisible } from './map-data'
+import {
+  SPOT_LABELS,
+  SPOTS,
+  USER_POSITION,
+  type Coords,
+  type Spot,
+  type SpotType,
+  distanceBetweenCoords,
+  isSpotVisible,
+} from './map-data'
 
 const LEGEND_TYPES: SpotType[] = ['gratuita', 'pago', 'carga', 'descarga', 'movilidad', 'moto']
-const NEARBY_RADIUS = 300
+const DESTINATION_RADIUS = 600 // metros alrededor del destino donde se muestran plazas
 
-export function MapScreen() {
+function MapScreenContent() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const { profile, spotColors, filters } = useApp()
+
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [busyOverrides, setBusyOverrides] = useState<Record<string, boolean>>({})
   const [selected, setSelected] = useState<Spot | null>(null)
-  const [message, setMessage] = useState('Sensor Bluetooth conectado')
+  const [userLocation, setUserLocation] = useState<Coords>(USER_POSITION)
+  const [routeInfo, setRouteInfo] = useState<{ distanceKm: string; durationMin: number } | null>(null)
+  const [message, setMessage] = useState('Localizando tu ubicación...')
   const closeFilters = useCallback(() => setFiltersOpen(false), [])
 
+  // 1. Obtener GPS real del usuario al cargar
+  useEffect(() => {
+    if (!('geolocation' in navigator)) {
+      setMessage('Ubicación predeterminada: Centro de Mataró')
+      return
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+        setMessage('Ubicación GPS conectada')
+      },
+      () => {
+        setMessage('GPS no disponible · Usando Centro de Mataró')
+      },
+      { enableHighAccuracy: true, timeout: 8000 },
+    )
+  }, [])
+
+  // 2. Leer destino elegido en el buscador
+  const destination = useMemo(() => {
+    const lat = parseFloat(searchParams.get('destLat') || '')
+    const lng = parseFloat(searchParams.get('destLng') || '')
+    const name = searchParams.get('destName') || ''
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || !name) return null
+    return { lat, lng, name }
+  }, [searchParams])
+
+  // 3. Filtrar plazas: si hay destino, SOLO mostramos las que están cerca del destino (libres y ocupadas)
+  const visibleAreaSpots = useMemo(() => {
+    if (!destination) return SPOTS
+    return SPOTS.filter(
+      (spot) => distanceBetweenCoords(destination, { lat: spot.lat, lng: spot.lng }) <= DESTINATION_RADIUS,
+    )
+  }, [destination])
+
+  const referencePoint = destination ?? userLocation
   const isBusy = (spot: Spot) => busyOverrides[spot.id] ?? spot.busy
-  const nearbyFree = SPOTS.filter(
-    (spot) => !isBusy(spot) && isSpotVisible(spot, false, filters) && distanceToUser(spot) <= NEARBY_RADIUS,
+
+  const nearbyFree = visibleAreaSpots.filter(
+    (spot) =>
+      !isBusy(spot) &&
+      isSpotVisible(spot, false, filters) &&
+      distanceBetweenCoords(referencePoint, { lat: spot.lat, lng: spot.lng }) <= DESTINATION_RADIUS,
   ).length
+
+  const nearbyBusy = visibleAreaSpots.filter(
+    (spot) =>
+      isBusy(spot) &&
+      isSpotVisible(spot, true, filters) &&
+      distanceBetweenCoords(referencePoint, { lat: spot.lat, lng: spot.lng }) <= DESTINATION_RADIUS,
+  ).length
+
   const activeTypes = LEGEND_TYPES.filter((type) => filters[type])
   const hiddenCount = LEGEND_TYPES.length - activeTypes.length + (filters.soloLibres ? 1 : 0)
+
+  const clearDestination = () => {
+    setSelected(null)
+    setRouteInfo(null)
+    router.push('/mapa')
+  }
 
   const handleAction = (action: 'ocupo' | 'dejo') => {
     if (!selected) {
@@ -48,9 +126,18 @@ export function MapScreen() {
       <main className="relative flex flex-1 flex-col">
         <h1 className="sr-only">Mapa de aparcamiento</h1>
         <div className="relative flex-1 overflow-hidden">
-          <MapCanvas busyOverrides={busyOverrides} selectedId={selected?.id ?? null} onSelect={setSelected} />
+          <MapCanvas
+            spots={visibleAreaSpots}
+            userLocation={userLocation}
+            destination={destination}
+            searchRadius={DESTINATION_RADIUS}
+            busyOverrides={busyOverrides}
+            selectedId={selected?.id ?? null}
+            onSelect={setSelected}
+            onRouteCalculated={setRouteInfo}
+          />
 
-          <div className="absolute inset-x-5 top-4 z-10 flex h-[72px] items-center gap-4 rounded-full bg-surface pr-3 pl-6 shadow-[0_6px_24px_rgba(31,45,49,0.12)]">
+          <div className="absolute inset-x-5 top-4 z-10 flex h-[72px] items-center gap-3 rounded-full bg-surface pr-3 pl-6 shadow-[0_6px_24px_rgba(31,45,49,0.12)]">
             <button
               type="button"
               onClick={() => setFiltersOpen(true)}
@@ -60,9 +147,19 @@ export function MapScreen() {
               <Menu className="size-6" aria-hidden="true" />
             </button>
             <span className="h-8 w-px bg-line" aria-hidden="true" />
-            <Link href="/buscar" className="flex-1 text-[21px] font-semibold text-ink">
-              ¿A dónde vas?
+            <Link href="/buscar" className="min-w-0 flex-1 truncate text-[19px] font-semibold text-ink">
+              {destination ? destination.name : '¿A dónde vas?'}
             </Link>
+            {destination ? (
+              <button
+                type="button"
+                onClick={clearDestination}
+                aria-label="Quitar destino"
+                className="flex size-8 shrink-0 items-center justify-center rounded-full bg-field text-subtle hover:text-ink"
+              >
+                <X className="size-4" strokeWidth={2.5} aria-hidden="true" />
+              </button>
+            ) : null}
             <Link href="/perfil" aria-label="Mi perfil" className="shrink-0 rounded-full ring-2 ring-brand">
               <Image
                 src={profile.photo || '/placeholder.svg'}
@@ -74,10 +171,17 @@ export function MapScreen() {
             </Link>
           </div>
 
-          <div className="pointer-events-none absolute top-[104px] left-6 z-10 flex items-center gap-2">
+          <div className="pointer-events-none absolute top-[104px] left-6 z-10 flex flex-wrap items-center gap-2 pr-14">
             <span className="flex h-[34px] items-center gap-2 rounded-full bg-surface px-3 text-[13px] font-extrabold text-ink shadow-[0_2px_10px_rgba(31,45,49,0.1)]">
               <span className="size-2 rounded-full bg-free" aria-hidden="true" />
-              ParkShare · En directo
+              {routeInfo ? (
+                <span className="flex items-center gap-1.5">
+                  <Route className="size-3.5 text-brand" aria-hidden="true" />
+                  Ruta más corta: {routeInfo.distanceKm} km ({routeInfo.durationMin} min)
+                </span>
+              ) : (
+                'ParkShare · En directo'
+              )}
             </span>
             {hiddenCount > 0 ? (
               <button
@@ -100,7 +204,12 @@ export function MapScreen() {
           </div>
 
           {selected ? (
-            <SpotCard spot={selected} busy={isBusy(selected)} onClose={() => setSelected(null)} />
+            <SpotCard
+              spot={selected}
+              referencePoint={referencePoint}
+              busy={isBusy(selected)}
+              onClose={() => setSelected(null)}
+            />
           ) : null}
 
           <ul
@@ -120,11 +229,12 @@ export function MapScreen() {
           className="relative z-20 -mt-6 rounded-t-[28px] bg-surface px-6 pt-2.5 pb-7 shadow-[0_-6px_24px_rgba(31,45,49,0.08)]"
         >
           <div className="mx-auto h-[5px] w-10 rounded-full bg-handle" aria-hidden="true" />
-          <h2 id="nearby-title" className="mt-5 text-[25px] font-extrabold text-ink">
-            Aparcamiento cerca de ti
+          <h2 id="nearby-title" className="mt-5 text-[23px] font-extrabold text-ink">
+            {destination ? `Plazas junto a ${destination.name}` : 'Aparcamiento cerca de ti'}
           </h2>
           <p className="mt-0.5 text-[15px] text-subtle">
-            {nearbyFree === 1 ? '1 plaza libre' : `${nearbyFree} plazas libres`} a menos de {NEARBY_RADIUS} m
+            {nearbyFree} {nearbyFree === 1 ? 'libre' : 'libres'} · {nearbyBusy}{' '}
+            {nearbyBusy === 1 ? 'ocupada' : 'ocupadas'} (radio {DESTINATION_RADIUS} m)
           </p>
           <div className="mt-5 grid grid-cols-2 gap-3">
             <ActionButton
@@ -152,6 +262,14 @@ export function MapScreen() {
   )
 }
 
+export function MapScreen() {
+  return (
+    <Suspense fallback={<div className="flex h-dvh items-center justify-center bg-map text-ink">Cargando mapa...</div>}>
+      <MapScreenContent />
+    </Suspense>
+  )
+}
+
 const SHORT_LABELS: Record<SpotType, string> = {
   gratuita: 'Libre',
   pago: 'Pago',
@@ -170,8 +288,19 @@ function LegendItem({ color, label }: { color: string; label: string }) {
   )
 }
 
-function SpotCard({ spot, busy, onClose }: { spot: Spot; busy: boolean; onClose: () => void }) {
+function SpotCard({
+  spot,
+  referencePoint,
+  busy,
+  onClose,
+}: {
+  spot: Spot
+  referencePoint: Coords
+  busy: boolean
+  onClose: () => void
+}) {
   const { spotColors } = useApp()
+  const dist = distanceBetweenCoords(referencePoint, { lat: spot.lat, lng: spot.lng })
   return (
     <div
       role="status"
@@ -185,7 +314,7 @@ function SpotCard({ spot, busy, onClose }: { spot: Spot; busy: boolean; onClose:
       <div className="min-w-0 flex-1">
         <p className="text-[17px] font-extrabold text-ink">{SPOT_LABELS[spot.type]}</p>
         <p className="truncate text-[14px] text-subtle">
-          {spot.street} · {distanceToUser(spot)} m
+          {spot.street} · a {dist} m
         </p>
         <p className={cn('mt-0.5 text-[13px] font-extrabold', busy ? 'text-busy' : 'text-free')}>
           {busy ? 'Ocupada' : 'Libre ahora'}
