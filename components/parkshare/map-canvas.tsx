@@ -294,6 +294,10 @@ export function MapCanvas({
       isSpotVisible(spot, busyOverrides[spot.id] ?? spot.busy, filters),
     )
 
+    const isCompact = Boolean(destination)
+    const size = isCompact ? 22 : 34
+    const half = Math.round(size / 2)
+
     visibleSpots.forEach((spot) => {
       const busy = busyOverrides[spot.id] ?? spot.busy
       const bg = busy ? spotColors.ocupada : spotColors[spot.type]
@@ -303,25 +307,25 @@ export function MapCanvas({
 
       const icon = L.divIcon({
         className: '',
-        iconSize: [34, 34],
-        iconAnchor: [17, 17],
+        iconSize: [size, size],
+        iconAnchor: [half, half],
         html: `
           <div
             title="${SPOT_LABELS[spot.type]} · ${spot.street}"
             style="
-              width: 34px;
-              height: 34px;
-              border-radius: 10px;
+              width: ${size}px;
+              height: ${size}px;
+              border-radius: ${isCompact ? '7px' : '10px'};
               background: ${bg};
               color: ${fg};
               display: flex;
               align-items: center;
               justify-content: center;
               font-weight: 800;
-              font-size: 13px;
-              box-shadow: 0 2px 6px rgba(0,0,0,0.28);
-              border: ${selected ? '3px solid #1f2d31' : '2px solid #ffffff'};
-              transform: ${selected ? 'scale(1.22)' : 'scale(1)'};
+              font-size: ${isCompact ? '10px' : '13px'};
+              box-shadow: 0 1px 4px rgba(0,0,0,0.28);
+              border: ${selected ? '2.5px solid #1f2d31' : '1.5px solid #ffffff'};
+              transform: ${selected ? 'scale(1.3)' : 'scale(1)'};
               transition: transform 150ms ease;
               cursor: pointer;
             "
@@ -336,7 +340,7 @@ export function MapCanvas({
       })
       marker.addTo(layer)
     })
-  }, [leafletReady, spots, busyOverrides, filters, spotColors, selectedId])
+  }, [leafletReady, spots, busyOverrides, filters, spotColors, selectedId, destination])
 
   return (
     <>
