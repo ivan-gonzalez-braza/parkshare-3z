@@ -83,13 +83,14 @@ export const SPOTS: Spot[] = [
   { id: 'girona-02', lat: 41.54690, lng: 2.43580, type: 'gratuita', busy: true, vertical: false, street: 'Calzada · Carrer de Girona' },
 ]
 
-function sampleAlongCoords(points: Coords[], stepMeters = 45): Coords[] {
+// Interpola puntos cada 10 metros siguiendo el trazado exacto de cada calle
+function sampleAlongCoords(points: Coords[], stepMeters = 10): Coords[] {
   const sampled: Coords[] = []
   for (let i = 0; i < points.length - 1; i++) {
     const p1 = points[i]
     const p2 = points[i + 1]
     const segLen = distanceBetweenCoords(p1, p2)
-    if (segLen < 12) continue
+    if (segLen < 4) continue
 
     const steps = Math.max(1, Math.floor(segLen / stepMeters))
     for (let s = 0; s <= steps; s++) {
@@ -109,7 +110,7 @@ function offsetCoord(origin: Coords, northMeters: number, eastMeters: number): C
   return { lat: origin.lat + dLat, lng: origin.lng + dLng }
 }
 
-// Cuadrícula de micro-rutas por calles interiores y secundarias dentro del radio
+// Combina los datos reales de Mataró con un barrido denso cada 10 m por todas las calles del radio
 export async function fetchRealSpotsNear(
   dest: Coords & { name: string },
   radiusMeters = 500,
@@ -120,7 +121,7 @@ export async function fetchRealSpotsNear(
 
   const combined: Spot[] = [...localMatches]
 
-  const tryAddSpot = (candidate: Spot, minGap = 44) => {
+  const tryAddSpot = (candidate: Spot, minGap = 10) => {
     if (distanceBetweenCoords(dest, { lat: candidate.lat, lng: candidate.lng }) > radiusMeters) return
     const tooClose = combined.some(
       (m) => distanceBetweenCoords({ lat: candidate.lat, lng: candidate.lng }, { lat: m.lat, lng: m.lng }) < minGap,
@@ -128,25 +129,67 @@ export async function fetchRealSpotsNear(
     if (!tooClose) combined.push(candidate)
   }
 
-  // Crear malla 4x4 dentro del círculo para obligar a OSRM a entrar por calles secundarias e interiores
-  const lanes = [-340, -130, 130, 340]
-  const edge = 430
+  // 1. Consultar aparcamientos y calzadas reales en OpenStreetMap (Overpass)
+  try {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 4500)
+    const query = `[out:json][timeout:4];(node["amenity"="parking"](around:${radiusMeters},${dest.lat},${dest.lng});way["amenity"="parking"](around:${radiusMeters},${dest.lat},${dest.lng});node["amenity"="charging_station"](around:${radiusMeters},${dest.lat},${dest.lng});node["amenity"="motorcycle_parking"](around:${radiusMeters},${dest.lat},${dest.lng}););out center;`
+
+    const res = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+      body: `data=${encodeURIComponent(query)}`,
+      signal: controller.signal,
+    })
+    clearTimeout(timeoutId)
+
+    if (res.ok) {
+      const data = await res.json()
+      const elements = Array.isArray(data?.elements) ? data.elements : []
+      elements.forEach((el: any) => {
+        const lat = el.lat ?? el.center?.lat
+        const lng = el.lon ?? el.center?.lon
+        if (typeof lat !== 'number' || typeof lng !== 'number') return
+        const tags = el.tags || {}
+
+        let type: SpotType = 'gratuita'
+        if (tags.amenity === 'charging_station') type = 'carga'
+        else if (tags.amenity === 'motorcycle_parking') type = 'moto'
+        else if (tags.fee === 'yes' || tags.parking === 'underground' || tags.parking === 'multi-storey') {
+          type = 'pago'
+        }
+
+        tryAddSpot({
+          id: `osm-real-${el.type}-${el.id}`,
+          lat,
+          lng,
+          type,
+          busy: false,
+          vertical: false,
+          street: tags.name || tags['addr:street'] || `Parking · ${dest.name}`,
+          capacity: tags.capacity ? Number(tags.capacity) : undefined,
+        })
+      })
+    }
+  } catch {
+    // Continuar con las calzadas reales del entorno
+  }
+
+  // 2. Barrido fino (7x7 franjas + diagonales) para entrar por todas las calles interiores de Mataró cada 10 m
+  const lanes = [-390, -260, -130, 0, 130, 260, 390]
+  const edge = 460
   const routePairs: [Coords, Coords][] = []
 
   for (const offset of lanes) {
-    // Barridos verticales (Norte <-> Sur) por cada franja del barrio
     routePairs.push([offsetCoord(dest, edge, offset), offsetCoord(dest, -edge, offset)])
-    // Barridos horizontales (Oeste <-> Este) por cada franja del barrio
     routePairs.push([offsetCoord(dest, offset, -edge), offsetCoord(dest, offset, edge)])
   }
 
-  // Añadir 8 tramos cortos entre manzanas interiores para cubrir callejones y transversales
-  const innerOffsets = [-220, -75, 75, 220]
-  for (let i = 0; i < innerOffsets.length; i++) {
-    const a = innerOffsets[i]
-    const b = innerOffsets[(i + 2) % innerOffsets.length]
-    routePairs.push([offsetCoord(dest, a, b), offsetCoord(dest, -a, -b)])
-  }
+  // Diagonales cruzadas para forzar paso por callejones y calles transversales
+  routePairs.push([offsetCoord(dest, 320, -320), offsetCoord(dest, -320, 320)])
+  routePairs.push([offsetCoord(dest, 320, 320), offsetCoord(dest, -320, -320)])
+  routePairs.push([offsetCoord(dest, 200, -380), offsetCoord(dest, -200, 380)])
+  routePairs.push([offsetCoord(dest, -200, -380), offsetCoord(dest, 200, 380)])
 
   await Promise.all(
     routePairs.map(async ([from, to], routeIdx) => {
@@ -156,7 +199,6 @@ export async function fetchRealSpotsNear(
         if (!res.ok) return
         const data = await res.json()
         const steps = data?.routes?.[0]?.legs?.[0]?.steps
-
         if (!Array.isArray(steps)) return
 
         steps.forEach((step: any, stepIdx: number) => {
@@ -165,20 +207,16 @@ export async function fetchRealSpotsNear(
           )
           if (coordsList.length < 2) return
 
-          const sampled = sampleAlongCoords(coordsList, 46)
-
+          const sampled = sampleAlongCoords(coordsList, 10)
           sampled.forEach((pt, ptIdx) => {
             const seed = routeIdx * 29 + stepIdx * 7 + ptIdx
-            const types: SpotType[] = ['gratuita', 'gratuita', 'gratuita', 'pago', 'carga', 'movilidad', 'moto']
-            const spotType = types[seed % types.length]
             const isVertical = seed % 2 === 1
-
             tryAddSpot({
-              id: `osrm-grid-${routeIdx}-${stepIdx}-${ptIdx}`,
+              id: `calzada-${routeIdx}-${stepIdx}-${ptIdx}`,
               lat: pt.lat,
               lng: pt.lng,
-              type: spotType,
-              busy: seed % 3 === 0,
+              type: 'gratuita',
+              busy: false,
               vertical: isVertical,
               street: step.name
                 ? `Calzada ${isVertical ? 'batería' : 'cordón'} · ${step.name}`
@@ -187,7 +225,7 @@ export async function fetchRealSpotsNear(
           })
         })
       } catch {
-        // Ignorar tramo si falla
+        // Ignorar tramo individual si falla
       }
     }),
   )
