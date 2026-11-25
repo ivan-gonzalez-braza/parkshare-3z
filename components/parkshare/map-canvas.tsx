@@ -295,7 +295,7 @@ export function MapCanvas({
     )
 
     const isCompact = Boolean(destination)
-    const size = isCompact ? 13 : 34
+    const size = isCompact ? 18 : 34
     const half = Math.round(size / 2)
 
     visibleSpots.forEach((spot) => {
@@ -315,17 +315,18 @@ export function MapCanvas({
             style="
               width: ${size}px;
               height: ${size}px;
-              border-radius: ${isCompact ? '9999px' : '10px'};
+              border-radius: ${isCompact ? '6px' : '10px'};
               background: ${bg};
               color: ${fg};
               display: flex;
               align-items: center;
               justify-content: center;
               font-weight: 800;
-              font-size: ${isCompact ? '0px' : '13px'};
+              font-size: ${isCompact ? '9px' : '13px'};
+              line-height: 1;
               box-shadow: 0 1px 4px rgba(0,0,0,0.28);
               border: ${selected ? '2.5px solid #1f2d31' : '1.5px solid #ffffff'};
-              transform: ${selected ? 'scale(1.6)' : 'scale(1)'};
+              transform: ${selected ? 'scale(1.45)' : 'scale(1)'};
               transition: transform 150ms ease;
               cursor: pointer;
             "
