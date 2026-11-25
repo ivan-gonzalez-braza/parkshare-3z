@@ -25,16 +25,21 @@ export const SPOT_LABELS: Record<SpotType, string> = {
 
 export const USER_POSITION: Coords = { lat: 41.5391, lng: 2.4445 }
 
-// Base de dades real d'aparcaments públics, solars municipals, zones regulades i punts de càrrega de Mataró
+// Coordenadas verificadas sobre asfalto y zonas de estacionamiento reales de Mataró
 export const SPOTS: Spot[] = [
-  // --- ESTACIÓ RENFE / PASSEIG MARÍTIM / PORT / VARADOR ---
-  { id: 'solar-varador', lat: 41.53321, lng: 2.45123, type: 'gratuita', busy: false, vertical: false, street: 'Solar Passeig Marítim - Varador', capacity: 160 },
-  { id: 'solar-puerto', lat: 41.53450, lng: 2.44890, type: 'gratuita', busy: true, vertical: false, street: 'Parking Puerto de Mataró', capacity: 137 },
-  { id: 'puerto-ev', lat: 41.53390, lng: 2.44940, type: 'carga', busy: false, vertical: false, street: 'Port de Mataró · Punto de Carga EV' },
-  { id: 'estacio-moto', lat: 41.53530, lng: 2.44720, type: 'moto', busy: false, vertical: true, street: 'Plaça de Miquel Biada (Estació RENFE)' },
-  { id: 'biada-descarga', lat: 41.53640, lng: 2.44610, type: 'descarga', busy: false, vertical: false, street: 'Ronda de Barceló / Biada (C/D)' },
-  { id: 'solar-sant-simo', lat: 41.53980, lng: 2.46120, type: 'gratuita', busy: false, vertical: false, street: 'Solar Passeig Marítim - Sant Simó', capacity: 210 },
-  { id: 'solar-torre-llauder', lat: 41.53720, lng: 2.44190, type: 'gratuita', busy: false, vertical: false, street: 'Solar Carrer Roma, 3 (Torre Llauder)', capacity: 178 },
+  // --- ESTACIÓ RENFE / EIXAMPLE / RONDA BARCELÓ / PASSEIG MARÍTIM ---
+  { id: 'estacio-moto', lat: 41.53548, lng: 2.44642, type: 'moto', busy: false, vertical: true, street: 'Plaça de Miquel Biada (Estació RENFE)' },
+  { id: 'estacio-pmr', lat: 41.53525, lng: 2.44615, type: 'movilidad', busy: false, vertical: false, street: 'Plaça de Miquel Biada · PMR Estació' },
+  { id: 'biada-descarga', lat: 41.53645, lng: 2.44585, type: 'descarga', busy: false, vertical: false, street: 'Ronda de Barceló / Biada (C/D)' },
+  { id: 'barcelo-azul-1', lat: 41.53610, lng: 2.44465, type: 'pago', busy: false, vertical: false, street: 'Ronda de Barceló (Zona Azul)' },
+  { id: 'barcelo-azul-2', lat: 41.53685, lng: 2.44390, type: 'pago', busy: true, vertical: false, street: 'Ronda de Barceló / Jaume Recoder' },
+  { id: 'cooperativa-1', lat: 41.53640, lng: 2.44510, type: 'pago', busy: false, vertical: false, street: 'Carrer de la Cooperativa' },
+  { id: 'camiral-estacio', lat: 41.53765, lng: 2.44595, type: 'pago', busy: true, vertical: false, street: 'Camí Ral (Eixample)' },
+  { id: 'solar-varador', lat: 41.53572, lng: 2.44985, type: 'gratuita', busy: false, vertical: false, street: 'Explanada Passeig Marítim - Varador', capacity: 160 },
+  { id: 'puerto-parking', lat: 41.53268, lng: 2.44675, type: 'pago', busy: false, vertical: false, street: 'Parking Port de Mataró (Dársena)', capacity: 137 },
+  { id: 'puerto-ev', lat: 41.53295, lng: 2.44710, type: 'carga', busy: false, vertical: false, street: 'Port de Mataró · Punto de Carga EV' },
+  { id: 'solar-torre-llauder', lat: 41.53695, lng: 2.44185, type: 'gratuita', busy: false, vertical: false, street: 'Solar Carrer Roma, 3 (Torre Llauder)', capacity: 178 },
+  { id: 'solar-sant-simo', lat: 41.54045, lng: 2.46015, type: 'gratuita', busy: false, vertical: false, street: 'Solar Passeig Marítim - Sant Simó', capacity: 210 },
 
   // --- CENTRE / EIXAMPLE / HAVANA ---
   { id: 'pumsa-tereses', lat: 41.53912, lng: 2.44356, type: 'pago', busy: false, vertical: false, street: 'Plaça de les Tereses, 42 (PUMSA)' },
@@ -84,7 +89,7 @@ export const SPOTS: Spot[] = [
   { id: 'girona-02', lat: 41.54690, lng: 2.43580, type: 'gratuita', busy: true, vertical: false, street: 'Carrer de Girona' },
 ]
 
-// Consulta ÚNICAMENTE aparcaments i zones d'estacionament reals verificats (sense inventar places a carreteres com la N-II)
+// Consulta aparcaments reals d'OpenStreetMap i valida amb OSRM que estiguin al costat d'un vial asfaltat (mai al mar ni a la sorra)
 export async function fetchRealSpotsNear(
   dest: Coords & { name: string },
   radiusMeters = 500,
@@ -103,12 +108,12 @@ export async function fetchRealSpotsNear(
     if (!tooClose) combined.push(candidate)
   }
 
-  // Només elements amb etiqueta explícita d'aparcament a OpenStreetMap (mai carreteres generals ni N-II)
-  const query = `[out:json][timeout:6];(node["amenity"="parking"](around:${radiusMeters},${dest.lat},${dest.lng});way["amenity"="parking"](around:${radiusMeters},${dest.lat},${dest.lng});node["amenity"="charging_station"](around:${radiusMeters},${dest.lat},${dest.lng});node["amenity"="motorcycle_parking"](around:${radiusMeters},${dest.lat},${dest.lng});way["parking:both"]["highway"!~"^(trunk|primary)$"](around:${radiusMeters},${dest.lat},${dest.lng});way["parking:left"]["highway"!~"^(trunk|primary)$"](around:${radiusMeters},${dest.lat},${dest.lng});way["parking:right"]["highway"!~"^(trunk|primary)$"](around:${radiusMeters},${dest.lat},${dest.lng}););out center;`
+  const query = `[out:json][timeout:6];(node["amenity"="parking"](around:${radiusMeters},${dest.lat},${dest.lng});way["amenity"="parking"](around:${radiusMeters},${dest.lat},${dest.lng});node["amenity"="parking_space"](around:${radiusMeters},${dest.lat},${dest.lng});node["amenity"="charging_station"](around:${radiusMeters},${dest.lat},${dest.lng});node["amenity"="motorcycle_parking"](around:${radiusMeters},${dest.lat},${dest.lng});way["parking:both"]["highway"!~"^(trunk|primary)$"](around:${radiusMeters},${dest.lat},${dest.lng});way["parking:left"]["highway"!~"^(trunk|primary)$"](around:${radiusMeters},${dest.lat},${dest.lng});way["parking:right"]["highway"!~"^(trunk|primary)$"](around:${radiusMeters},${dest.lat},${dest.lng}););out center;`
 
   const endpoints = [
     'https://overpass-api.de/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter',
+    'https://overpass.private.coffee/api/interpreter',
   ]
 
   for (const url of endpoints) {
@@ -128,50 +133,73 @@ export async function fetchRealSpotsNear(
       const data = await res.json()
       const elements = Array.isArray(data?.elements) ? data.elements : []
 
-      elements.forEach((el: any) => {
-        const lat = el.lat ?? el.center?.lat
-        const lng = el.lon ?? el.center?.lon
-        if (typeof lat !== 'number' || typeof lng !== 'number') return
+      await Promise.all(
+        elements.slice(0, 60).map(async (el: any) => {
+          const rawLat = el.lat ?? el.center?.lat
+          const rawLng = el.lon ?? el.center?.lon
+          if (typeof rawLat !== 'number' || typeof rawLng !== 'number') return
 
-        const tags = el.tags || {}
-        const parkingTags = [tags['parking:both'], tags['parking:left'], tags['parking:right']]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase()
+          const tags = el.tags || {}
+          const parkingTags = [tags['parking:both'], tags['parking:left'], tags['parking:right']]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase()
 
-        if (parkingTags === 'no' || parkingTags.includes('no_parking') || parkingTags.includes('no_stopping')) {
-          return
-        }
+          if (parkingTags === 'no' || parkingTags.includes('no_parking') || parkingTags.includes('no_stopping')) {
+            return
+          }
 
-        let type: SpotType = 'gratuita'
-        if (tags.amenity === 'charging_station') type = 'carga'
-        else if (tags.amenity === 'motorcycle_parking') type = 'moto'
-        else if (tags.fee === 'yes' || tags.parking === 'underground' || tags.parking === 'multi-storey') {
-          type = 'pago'
-        } else if (tags['capacity:disabled'] && !tags.capacity) {
-          type = 'movilidad'
-        }
+          // Comprovar contra la xarxa viària que el punt no caigui al mar ni a la platja
+          let finalLat = rawLat
+          let finalLng = rawLng
+          let nearestRoad = ''
+          try {
+            const snapRes = await fetch(
+              `https://router.project-osrm.org/nearest/v1/driving/${rawLng},${rawLat}?number=1`,
+            )
+            const snapData = await snapRes.json()
+            const wp = snapData?.waypoints?.[0]
+            if (!wp?.location || wp.distance > 45) return // Descartar si és a l'aigua o lluny de qualsevol accés rodat
+            if (wp.distance > 18) {
+              // Ajustar el centroide d'un pàrquing gran a la seva entrada asfaltada
+              finalLng = wp.location[0]
+              finalLat = wp.location[1]
+            }
+            nearestRoad = wp.name || ''
+          } catch {
+            // Si falla la comprovació puntual, mantenim la coordenada original
+          }
 
-        const streetName =
-          tags.name ||
-          tags['addr:street'] ||
-          (tags.parking === 'street_side' ? `Aparcament al carrer · ${dest.name}` : `Aparcament real · ${dest.name}`)
+          let type: SpotType = 'gratuita'
+          if (tags.amenity === 'charging_station') type = 'carga'
+          else if (tags.amenity === 'motorcycle_parking') type = 'moto'
+          else if (tags.fee === 'yes' || tags.parking === 'underground' || tags.parking === 'multi-storey') {
+            type = 'pago'
+          } else if (tags['capacity:disabled'] && !tags.capacity) {
+            type = 'movilidad'
+          }
 
-        tryAddSpot({
-          id: `osm-real-${el.type}-${el.id}`,
-          lat,
-          lng,
-          type,
-          busy: false, // Només passa a ocupada quan un usuari prem "Ocupo plaza"
-          vertical: parkingTags.includes('perpendicular') || parkingTags.includes('diagonal'),
-          street: streetName,
-          capacity: tags.capacity ? Number(tags.capacity) : undefined,
-        })
-      })
+          const streetName =
+            tags.name ||
+            tags['addr:street'] ||
+            (nearestRoad ? `Aparcament · ${nearestRoad}` : `Aparcament real · ${dest.name}`)
+
+          tryAddSpot({
+            id: `osm-real-${el.type}-${el.id}`,
+            lat: finalLat,
+            lng: finalLng,
+            type,
+            busy: false,
+            vertical: parkingTags.includes('perpendicular') || parkingTags.includes('diagonal'),
+            street: streetName,
+            capacity: tags.capacity ? Number(tags.capacity) : undefined,
+          })
+        }),
+      )
 
       break
     } catch {
-      // Si Overpass no respon, es mantenen únicament els punts reals de SPOTS
+      // Provar el següent servidor Overpass
     }
   }
 
