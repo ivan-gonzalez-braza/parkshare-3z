@@ -8,14 +8,14 @@ import {
   Layers,
   MapPin,
   Menu,
-  Navigation,
   Route,
   SquareParking,
   X,
 } from 'lucide-react'
 import { useApp } from './app-provider'
-import { DEFAULT_SPOT_COLORS, MapCanvas } from './map-canvas'
+import { MapCanvas } from './map-canvas'
 import {
+  MATARO_DESTINATIONS,
   SPOTS,
   SPOT_LABELS,
   USER_POSITION,
@@ -40,69 +40,20 @@ type SearchSuggestion = {
   lng: number
 }
 
-type NominatimItem = {
-  place_id: number | string
-  name?: string
-  display_name: string
-  lat: string
-  lon: string
-  address?: {
-    road?: string
-    pedestrian?: string
-    square?: string
-    suburb?: string
-    city?: string
-    town?: string
-    village?: string
-    municipality?: string
-    state?: string
-    country?: string
-  }
-}
-
-type AppContextShape = {
-  user?: { name: string; avatar?: string }
-  openDrawer?: () => void
-  setTab?: (tab: 'map' | 'favorites' | 'history' | 'profile') => void
-  showToast?: (msg: string) => void
-  spotColors?: Record<SpotType | 'ocupada', string>
-}
-
 export function MapScreen() {
-  const app = useApp() as AppContextShape
-  const user = app?.user ?? { name: 'Usuario', avatar: '' }
-  const openDrawer = app?.openDrawer ?? (() => {})
-  const setTab = app?.setTab ?? (() => {})
-  const showToast = app?.showToast ?? (() => {})
-  const spotColors: Record<SpotType | 'ocupada', string> = app?.spotColors ?? DEFAULT_SPOT_COLORS
-
+  const { user, openDrawer, setTab, filters, toggleFilter, spotColors, showToast } = useApp()
   const [query, setQuery] = useState('')
   const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([])
   const [searching, setSearching] = useState(false)
   const [selected, setSelected] = useState<Spot | null>(null)
   const [sheetOpen, setSheetOpen] = useState(true)
   const [userLocation, setUserLocation] = useState<Coords>(USER_POSITION)
-  const [heading, setHeading] = useState<number | null>(null)
   const [gpsStatus, setGpsStatus] = useState<'loading' | 'live' | 'fallback'>('loading')
   const [destination, setDestination] = useState<(Coords & { name: string }) | null>(null)
-  const [isNavigating, setIsNavigating] = useState(false)
-  const [routeInfo, setRouteInfo] = useState<{
-    distanceKm: string
-    durationMin: number
-    nextStep?: string
-  } | null>(null)
+  const [routeInfo, setRouteInfo] = useState<{ distanceKm: string; durationMin: number } | null>(null)
   const [nearbySpots, setNearbySpots] = useState<Spot[]>(SPOTS)
   const [loadingSpots, setLoadingSpots] = useState(false)
   const [busyOverrides, setBusyOverrides] = useState<Record<string, boolean>>({})
-  const [filters, setFilters] = useState<Record<SpotType | 'soloLibres', boolean>>({
-    gratuita: true,
-    pago: true,
-    carga: true,
-    descarga: true,
-    movilidad: true,
-    moto: true,
-    soloLibres: false,
-  })
   const searchBoxRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -117,15 +68,12 @@ export function MapScreen() {
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
         })
-        if (typeof pos.coords.heading === 'number' && !Number.isNaN(pos.coords.heading)) {
-          setHeading(pos.coords.heading)
-        }
         setGpsStatus('live')
       },
       () => {
         setGpsStatus((prev) => (prev === 'live' ? 'live' : 'fallback'))
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 2000 },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 },
     )
 
     return () => navigator.geolocation.clearWatch(watchId)
@@ -138,49 +86,51 @@ export function MapScreen() {
       return
     }
 
+    const qLower = trimmed.toLowerCase()
+    const localMatches: SearchSuggestion[] = MATARO_DESTINATIONS.filter(
+      (d) =>
+        d.name.toLowerCase().includes(qLower) ||
+        d.area.toLowerCase().includes(qLower),
+    ).map((d) => ({
+      id: `local-${d.name}`,
+      name: d.name,
+      subtitle: `${d.area}, Mataró`,
+      lat: d.lat,
+      lng: d.lng,
+    }))
+
+    setSuggestions(localMatches)
+
     const controller = new AbortController()
     const timer = setTimeout(async () => {
       setSearching(true)
       try {
         const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-          trimmed,
-        )}&limit=6&addressdetails=1`
+          `${trimmed}, Mataró, Barcelona`,
+        )}&limit=5&addressdetails=1`
         const res = await fetch(url, {
           signal: controller.signal,
           headers: { 'Accept-Language': 'es' },
         })
-        const data: unknown = await res.json()
-        const items = Array.isArray(data) ? (data as NominatimItem[]) : []
-        const mapped: SearchSuggestion[] = items.map((item) => {
-          const addr = item.address || {}
-          const primaryName =
-            item.name ||
-            addr.road ||
-            addr.pedestrian ||
-            addr.square ||
-            addr.suburb ||
-            item.display_name.split(',')[0]
+        const data = await res.json()
+        const remoteMatches: SearchSuggestion[] = (Array.isArray(data) ? data : []).map((item: any) => ({
+          id: String(item.place_id),
+          name: item.name || item.display_name.split(',')[0],
+          subtitle: item.display_name.split(',').slice(1, 3).join(',').trim() || 'Mataró',
+          lat: parseFloat(item.lat),
+          lng: parseFloat(item.lon),
+        }))
 
-          const locality =
-            addr.city || addr.town || addr.village || addr.municipality || addr.state || ''
-          const country = addr.country || ''
-          const subtitleParts = [
-            addr.road && addr.road !== primaryName ? addr.road : '',
-            locality,
-            country,
-          ].filter(Boolean)
-
-          return {
-            id: String(item.place_id),
-            name: primaryName,
-            subtitle: subtitleParts.join(', ') || item.display_name,
-            lat: parseFloat(item.lat),
-            lng: parseFloat(item.lon),
-          }
-        })
-        setSuggestions(mapped)
+        const merged = [...localMatches]
+        for (const r of remoteMatches) {
+          const isDuplicate = merged.some(
+            (m) => distanceBetweenCoords({ lat: m.lat, lng: m.lng }, { lat: r.lat, lng: r.lng }) < 60,
+          )
+          if (!isDuplicate) merged.push(r)
+        }
+        setSuggestions(merged.slice(0, 6))
       } catch {
-        // Ignorar abortos al teclear rápido
+        // Ignorar abortos de búsqueda rápida
       } finally {
         setSearching(false)
       }
@@ -195,7 +145,6 @@ export function MapScreen() {
   useEffect(() => {
     if (!destination) {
       setNearbySpots(SPOTS)
-      setIsNavigating(false)
       return
     }
 
@@ -237,49 +186,8 @@ export function MapScreen() {
     setQuery(item.name)
     setSuggestions([])
     setSelected(null)
-    setIsNavigating(false)
     setSheetOpen(true)
-    showToast(`Destino fijado: ${item.name}`)
-  }
-
-  const handleMapClick = async (coords: Coords) => {
-    const tempName = `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`
-    setDestination({ lat: coords.lat, lng: coords.lng, name: tempName })
-    setQuery(tempName)
-    setSuggestions([])
-    setSelected(null)
-    setIsNavigating(false)
-    setSheetOpen(true)
-
-    try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.lat}&lon=${coords.lng}&zoom=18&addressdetails=1`,
-        { headers: { 'Accept-Language': 'es' } },
-      )
-      const data = (await res.json()) as Partial<NominatimItem>
-      const addr = data?.address || {}
-      const realPlaceName =
-        data?.name ||
-        addr.road ||
-        addr.pedestrian ||
-        addr.square ||
-        addr.suburb ||
-        addr.city ||
-        addr.town ||
-        data?.display_name?.split(',')[0]
-
-      if (realPlaceName) {
-        setDestination((prev) =>
-          prev && prev.lat === coords.lat && prev.lng === coords.lng
-            ? { ...prev, name: realPlaceName }
-            : prev,
-        )
-        setQuery(realPlaceName)
-        showToast(`Destino seleccionado: ${realPlaceName}`)
-      }
-    } catch {
-      showToast('Destino seleccionado en el mapa')
-    }
+    showToast(`Calculando ruta a ${item.name}`)
   }
 
   const handleClearDestination = () => {
@@ -288,23 +196,6 @@ export function MapScreen() {
     setSuggestions([])
     setSelected(null)
     setRouteInfo(null)
-    setIsNavigating(false)
-  }
-
-  const handleStartNavigation = () => {
-    if (!destination) return
-    setIsNavigating(true)
-    setSelected(null)
-    showToast(`Iniciando ruta hacia ${destination.name}`)
-  }
-
-  const handleStopNavigation = () => {
-    setIsNavigating(false)
-    showToast('Navegación finalizada')
-  }
-
-  const toggleFilter = (key: SpotType | 'soloLibres') => {
-    setFilters((prev) => ({ ...prev, [key]: !prev[key] }))
   }
 
   const claimOrRelease = (occupy: boolean) => {
@@ -355,125 +246,94 @@ export function MapScreen() {
         <MapCanvas
           spots={spotsInScope}
           userLocation={userLocation}
-          heading={heading}
           destination={destination}
-          isNavigating={isNavigating}
           searchRadius={DESTINATION_RADIUS}
           busyOverrides={busyOverrides}
-          filters={filters}
           selectedId={selected?.id ?? null}
           onSelect={(spot) => {
             setSelected(spot)
             if (spot) setSheetOpen(true)
           }}
-          onMapClick={handleMapClick}
           onRouteCalculated={setRouteInfo}
         />
 
-        {isNavigating && destination ? (
-          <div className="absolute inset-x-4 top-3 z-30 rounded-[24px] bg-[#166534] p-4 text-white shadow-[0_10px_28px_rgba(22,101,52,0.38)]">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-white/15">
-                  <Navigation className="size-6 text-white" aria-hidden="true" />
-                </div>
-                <div className="min-w-0">
-                  <p className="truncate text-[16px] font-extrabold leading-tight">
-                    {routeInfo?.nextStep || `Hacia ${destination.name}`}
-                  </p>
-                  <p className="mt-0.5 text-[12px] font-semibold text-emerald-100">
-                    {routeInfo ? `${routeInfo.durationMin} min · ${routeInfo.distanceKm} km` : 'Calculando...'} · {destination.name}
-                  </p>
-                </div>
-              </div>
+        <div ref={searchBoxRef} className="absolute inset-x-4 top-3 z-30">
+          <div className="flex h-[62px] items-center gap-2 rounded-full bg-surface px-3 shadow-[0_6px_18px_rgba(31,45,49,0.12)]">
+            <button
+              type="button"
+              aria-label="Abrir menú"
+              onClick={openDrawer}
+              className="flex size-11 shrink-0 items-center justify-center rounded-full text-ink hover:bg-field"
+            >
+              <Menu className="size-[22px]" aria-hidden="true" />
+            </button>
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && suggestions.length > 0) {
+                  e.preventDefault()
+                  handleSelectSuggestion(suggestions[0])
+                }
+              }}
+              placeholder="¿A dónde vas en Mataró?"
+              aria-label="Buscar destino en Mataró"
+              className="min-w-0 flex-1 bg-transparent text-[16px] font-medium text-ink placeholder:text-ink-subtle focus:outline-none"
+            />
+            {query ? (
               <button
                 type="button"
-                onClick={handleStopNavigation}
-                className="shrink-0 rounded-full bg-red-500 px-3.5 py-2 text-[12px] font-extrabold text-white shadow hover:bg-red-600"
+                aria-label="Borrar destino"
+                onClick={handleClearDestination}
+                className="flex size-8 shrink-0 items-center justify-center rounded-full bg-field text-ink-muted hover:text-ink"
               >
-                Salir
+                <X className="size-4" aria-hidden="true" />
               </button>
-            </div>
+            ) : null}
+            <button
+              type="button"
+              aria-label="Abrir perfil"
+              onClick={() => setTab('profile')}
+              className="shrink-0 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+            >
+              <Avatar name={user.name} src={user.avatar} size={46} />
+            </button>
           </div>
-        ) : (
-          <div ref={searchBoxRef} className="absolute inset-x-4 top-3 z-30">
-            <div className="flex h-[62px] items-center gap-2 rounded-full bg-surface px-3 shadow-[0_6px_18px_rgba(31,45,49,0.12)]">
-              <button
-                type="button"
-                aria-label="Abrir menú"
-                onClick={openDrawer}
-                className="flex size-11 shrink-0 items-center justify-center rounded-full text-ink hover:bg-field"
-              >
-                <Menu className="size-[22px]" aria-hidden="true" />
-              </button>
-              <input
-                type="search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && suggestions.length > 0) {
-                    e.preventDefault()
-                    handleSelectSuggestion(suggestions[0])
-                  }
-                }}
-                placeholder="Buscar dirección o pulsa en el mapa..."
-                aria-label="Buscar destino en cualquier lugar del mundo"
-                className="min-w-0 flex-1 bg-transparent text-[16px] font-medium text-ink placeholder:text-ink-subtle focus:outline-none"
-              />
-              {query ? (
-                <button
-                  type="button"
-                  aria-label="Borrar destino"
-                  onClick={handleClearDestination}
-                  className="flex size-8 shrink-0 items-center justify-center rounded-full bg-field text-ink-muted hover:text-ink"
-                >
-                  <X className="size-4" aria-hidden="true" />
-                </button>
-              ) : null}
-              <button
-                type="button"
-                aria-label="Abrir perfil"
-                onClick={() => setTab('profile')}
-                className="shrink-0 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-              >
-                <Avatar name={user.name} src={user.avatar} size={46} />
-              </button>
+
+          {(suggestions.length > 0 || searching) && (
+            <div className="mt-2 overflow-hidden rounded-[22px] bg-surface shadow-[0_12px_30px_rgba(31,45,49,0.18)] border border-line">
+              {searching && suggestions.length === 0 ? (
+                <p className="px-4 py-3 text-[13px] font-medium text-ink-muted">Buscando calle o lugar...</p>
+              ) : (
+                suggestions.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleSelectSuggestion(item)}
+                    className="flex w-full items-start gap-3 border-b border-line/60 px-4 py-3 text-left last:border-b-0 hover:bg-field"
+                  >
+                    <MapPin className="mt-0.5 size-4 shrink-0 text-brand-deep" aria-hidden="true" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[14px] font-bold text-ink">{item.name}</p>
+                      <p className="truncate text-[12px] text-ink-muted">{item.subtitle}</p>
+                    </div>
+                  </button>
+                ))
+              )}
             </div>
+          )}
 
-            {(suggestions.length > 0 || searching) && (
-              <div className="mt-2 overflow-hidden rounded-[22px] bg-surface shadow-[0_12px_30px_rgba(31,45,49,0.18)] border border-line">
-                {searching && suggestions.length === 0 ? (
-                  <p className="px-4 py-3 text-[13px] font-medium text-ink-muted">Buscando ubicación...</p>
-                ) : (
-                  suggestions.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => handleSelectSuggestion(item)}
-                      className="flex w-full items-start gap-3 border-b border-line/60 px-4 py-3 text-left last:border-b-0 hover:bg-field"
-                    >
-                      <MapPin className="mt-0.5 size-4 shrink-0 text-brand-deep" aria-hidden="true" />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[14px] font-bold text-ink">{item.name}</p>
-                        <p className="truncate text-[12px] text-ink-muted">{item.subtitle}</p>
-                      </div>
-                    </button>
-                  ))
-                )}
-              </div>
-            )}
-
-            {destination && routeInfo && suggestions.length === 0 && (
-              <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-surface/95 px-3.5 py-1.5 text-[12px] font-bold text-ink shadow-[0_4px_12px_rgba(31,45,49,0.12)] backdrop-blur-xs">
-                <span className="size-2 rounded-full bg-[#18b259]" aria-hidden="true" />
-                <Route className="size-3.5 text-brand-deep" aria-hidden="true" />
-                <span>
-                  Ruta más corta: {routeInfo.distanceKm} km ({routeInfo.durationMin} min)
-                </span>
-              </div>
-            )}
-          </div>
-        )}
+          {destination && routeInfo && suggestions.length === 0 && (
+            <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-surface/95 px-3.5 py-1.5 text-[12px] font-bold text-ink shadow-[0_4px_12px_rgba(31,45,49,0.12)] backdrop-blur-xs">
+              <span className="size-2 rounded-full bg-[#18b259]" aria-hidden="true" />
+              <Route className="size-3.5 text-brand-deep" aria-hidden="true" />
+              <span>
+                Ruta más corta: {routeInfo.distanceKm} km ({routeInfo.durationMin} min)
+              </span>
+            </div>
+          )}
+        </div>
 
         <div className="pointer-events-none absolute bottom-3 left-4 right-20 z-20">
           <div className="inline-flex max-w-full flex-wrap items-center gap-x-2.5 gap-y-1 rounded-2xl bg-surface/92 px-3 py-1.5 shadow-[0_4px_14px_rgba(31,45,49,0.12)] backdrop-blur-xs">
@@ -507,9 +367,9 @@ export function MapScreen() {
         </button>
 
         <div className="max-h-[58vh] overflow-y-auto px-5 pb-6">
-          <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0 flex-1">
-              <h2 className="truncate text-[22px] font-extrabold tracking-tight text-ink">
+          <div className="flex items-baseline justify-between">
+            <div>
+              <h2 className="text-[22px] font-extrabold tracking-tight text-ink">
                 {destination ? `Plazas en ${destination.name}` : 'Plazas disponibles'}
               </h2>
               <p className="mt-0.5 text-[14px] font-medium text-ink-muted">
@@ -523,17 +383,6 @@ export function MapScreen() {
                 )}
               </p>
             </div>
-
-            {destination && !isNavigating && (
-              <button
-                type="button"
-                onClick={handleStartNavigation}
-                className="flex shrink-0 items-center gap-1.5 rounded-full bg-brand px-4 py-2.5 text-[14px] font-extrabold text-ink shadow-[0_4px_12px_rgba(253,161,102,0.4)] hover:bg-brand-strong active:scale-[0.98]"
-              >
-                <Navigation className="size-4 fill-ink" aria-hidden="true" />
-                <span>Iniciar ruta</span>
-              </button>
-            )}
           </div>
 
           {selected ? (
@@ -604,8 +453,8 @@ export function MapScreen() {
             />
             <span>
               {gpsStatus === 'live'
-                ? 'Ubicación GPS conectada · Pulsa el mapa o busca un destino'
-                : 'Pulsa cualquier punto del mapa o busca un destino'}
+                ? 'Ubicación GPS en tiempo real conectada'
+                : 'Mostrando mapa de Mataró · Activa el GPS para tu posición'}
             </span>
           </p>
 
