@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { LocateFixed, Minus, Plus } from 'lucide-react'
-import { useApp } from './app-provider'
 import {
   SPOT_LABELS,
   type Coords,
   type Spot,
+  type SpotType,
   isSpotVisible,
   readableTextColor,
 } from './map-data'
@@ -17,13 +17,38 @@ declare global {
   }
 }
 
-const SPOT_BADGE_TEXT: Record<Spot['type'], string> = {
+export const DEFAULT_SPOT_COLORS: Record<SpotType | 'ocupada', string> = {
+  gratuita: '#18b259',
+  pago: '#2563eb',
+  carga: '#8b5cf6',
+  descarga: '#eab308',
+  movilidad: '#38bdf8',
+  moto: '#f97316',
+  ocupada: '#ef4444',
+}
+
+const SPOT_BADGE_TEXT: Record<SpotType, string> = {
   gratuita: 'P',
   pago: '€',
   carga: '⚡',
   descarga: 'D',
   movilidad: '♿',
   moto: 'M',
+}
+
+type MapCanvasProps = {
+  spots: Spot[]
+  userLocation: Coords
+  heading?: number | null
+  destination: (Coords & { name: string }) | null
+  isNavigating: boolean
+  searchRadius: number
+  busyOverrides: Record<string, boolean>
+  filters: Record<SpotType | 'soloLibres', boolean>
+  selectedId: string | null
+  onSelect: (spot: Spot | null) => void
+  onMapClick?: (coords: Coords) => void
+  onRouteCalculated?: (info: { distanceKm: string; durationMin: number; nextStep?: string } | null) => void
 }
 
 export function MapCanvas({
@@ -34,24 +59,12 @@ export function MapCanvas({
   isNavigating,
   searchRadius,
   busyOverrides,
+  filters,
   selectedId,
   onSelect,
   onMapClick,
   onRouteCalculated,
-}: {
-  spots: Spot[]
-  userLocation: Coords
-  heading?: number | null
-  destination: (Coords & { name: string }) | null
-  isNavigating: boolean
-  searchRadius: number
-  busyOverrides: Record<string, boolean>
-  selectedId: string | null
-  onSelect: (spot: Spot | null) => void
-  onMapClick?: (coords: Coords) => void
-  onRouteCalculated?: (info: { distanceKm: string; durationMin: number; nextStep?: string } | null) => void
-}) {
-  const { filters, spotColors } = useApp()
+}: MapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<any>(null)
   const markersLayerRef = useRef<any>(null)
@@ -309,7 +322,7 @@ export function MapCanvas({
 
     visibleSpots.forEach((spot) => {
       const busy = busyOverrides[spot.id] ?? spot.busy
-      const bg = busy ? spotColors.ocupada : spotColors[spot.type]
+      const bg = busy ? DEFAULT_SPOT_COLORS.ocupada : DEFAULT_SPOT_COLORS[spot.type]
       const fg = readableTextColor(bg)
       const selected = spot.id === selectedId
       const badge = SPOT_BADGE_TEXT[spot.type]
@@ -349,7 +362,7 @@ export function MapCanvas({
       })
       marker.addTo(layer)
     })
-  }, [leafletReady, spots, busyOverrides, filters, spotColors, selectedId, destination])
+  }, [leafletReady, spots, busyOverrides, filters, selectedId, destination])
 
   return (
     <>
