@@ -29,21 +29,27 @@ const SPOT_BADGE_TEXT: Record<Spot['type'], string> = {
 export function MapCanvas({
   spots,
   userLocation,
+  heading,
   destination,
+  isNavigating,
   searchRadius,
   busyOverrides,
   selectedId,
   onSelect,
+  onMapClick,
   onRouteCalculated,
 }: {
   spots: Spot[]
   userLocation: Coords
+  heading?: number | null
   destination: (Coords & { name: string }) | null
+  isNavigating: boolean
   searchRadius: number
   busyOverrides: Record<string, boolean>
   selectedId: string | null
   onSelect: (spot: Spot | null) => void
-  onRouteCalculated?: (info: { distanceKm: string; durationMin: number } | null) => void
+  onMapClick?: (coords: Coords) => void
+  onRouteCalculated?: (info: { distanceKm: string; durationMin: number; nextStep?: string } | null) => void
 }) {
   const { filters, spotColors } = useApp()
   const containerRef = useRef<HTMLDivElement>(null)
@@ -51,12 +57,19 @@ export function MapCanvas({
   const markersLayerRef = useRef<any>(null)
   const userLayerRef = useRef<any>(null)
   const routeLayerRef = useRef<any>(null)
+  const hasFittedInitialRouteRef = useRef(false)
   const onSelectRef = useRef(onSelect)
+  const onMapClickRef = useRef(onMapClick)
   const onRouteRef = useRef(onRouteCalculated)
   const [leafletReady, setLeafletReady] = useState(false)
 
   onSelectRef.current = onSelect
+  onMapClickRef.current = onMapClick
   onRouteRef.current = onRouteCalculated
+
+  useEffect(() => {
+    hasFittedInitialRouteRef.current = false
+  }, [destination?.lat, destination?.lng])
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -87,8 +100,11 @@ export function MapCanvas({
       routeLayerRef.current = L.layerGroup().addTo(map)
       markersLayerRef.current = L.layerGroup().addTo(map)
 
-      map.on('click', () => {
+      map.on('click', (e: any) => {
         onSelectRef.current(null)
+        if (e?.latlng && typeof e.latlng.lat === 'number' && typeof e.latlng.lng === 'number') {
+          onMapClickRef.current?.({ lat: e.latlng.lat, lng: e.latlng.lng })
+        }
       })
 
       mapRef.current = map
@@ -127,24 +143,60 @@ export function MapCanvas({
   useEffect(() => {
     const L = window.L
     const layer = userLayerRef.current
-    if (!leafletReady || !L || !layer) return
+    const map = mapRef.current
+    if (!leafletReady || !L || !layer || !map) return
 
     layer.clearLayers()
 
-    const userIcon = L.divIcon({
-      className: '',
-      iconSize: [28, 28],
-      iconAnchor: [14, 14],
-      html: `
-        <div title="Tu ubicación" style="position:relative;width:28px;height:28px;display:flex;align-items:center;justify-content:center;">
-          <span style="position:absolute;inset:0;border-radius:9999px;background:rgba(49,135,244,0.28);"></span>
-          <span style="position:relative;width:14px;height:14px;border-radius:9999px;background:#3187f4;border:3px solid #ffffff;box-shadow:0 1px 4px rgba(0,0,0,0.4);"></span>
-        </div>
-      `,
-    })
+    const rotation = typeof heading === 'number' && !Number.isNaN(heading) ? heading : 0
+
+    const userIcon = isNavigating
+      ? L.divIcon({
+          className: '',
+          iconSize: [44, 44],
+          iconAnchor: [22, 22],
+          html: `
+            <div title="Navegando" style="position:relative;width:44px;height:44px;display:flex;align-items:center;justify-content:center;">
+              <span style="position:absolute;inset:0;border-radius:9999px;background:rgba(37,99,235,0.22);"></span>
+              <div style="
+                width:32px;
+                height:32px;
+                border-radius:9999px;
+                background:#2563eb;
+                border:3px solid #ffffff;
+                box-shadow:0 3px 10px rgba(37,99,235,0.55);
+                display:flex;
+                align-items:center;
+                justify-content:center;
+                transform:rotate(${rotation}deg);
+              ">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="#ffffff">
+                  <path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/>
+                </svg>
+              </div>
+            </div>
+          `,
+        })
+      : L.divIcon({
+          className: '',
+          iconSize: [28, 28],
+          iconAnchor: [14, 14],
+          html: `
+            <div title="Tu ubicación" style="position:relative;width:28px;height:28px;display:flex;align-items:center;justify-content:center;">
+              <span style="position:absolute;inset:0;border-radius:9999px;background:rgba(49,135,244,0.28);"></span>
+              <span style="position:relative;width:14px;height:14px;border-radius:9999px;background:#3187f4;border:3px solid #ffffff;box-shadow:0 1px 4px rgba(0,0,0,0.4);"></span>
+            </div>
+          `,
+        })
 
     L.marker([userLocation.lat, userLocation.lng], { icon: userIcon, interactive: false }).addTo(layer)
-  }, [leafletReady, userLocation])
+
+    if (isNavigating) {
+      map.flyTo([userLocation.lat, userLocation.lng], Math.max(map.getZoom(), 17), {
+        duration: 0.6,
+      })
+    }
+  }, [leafletReady, userLocation, heading, isNavigating])
 
   useEffect(() => {
     const L = window.L
@@ -185,7 +237,7 @@ export function MapCanvas({
       .addTo(routeLayer)
 
     let cancelled = false
-    const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${userLocation.lng},${userLocation.lat};${destination.lng},${destination.lat}?overview=full&geometries=geojson`
+    const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${userLocation.lng},${userLocation.lat};${destination.lng},${destination.lat}?overview=full&geometries=geojson&steps=true`
 
     fetch(osrmUrl)
       .then((res) => res.json())
@@ -193,30 +245,44 @@ export function MapCanvas({
         if (cancelled || !routeLayerRef.current || !mapRef.current) return
         const route = data?.routes?.[0]
         if (!route?.geometry?.coordinates) {
-          mapRef.current.flyTo([destination.lat, destination.lng], 16)
+          if (!hasFittedInitialRouteRef.current) {
+            hasFittedInitialRouteRef.current = true
+            mapRef.current.flyTo([destination.lat, destination.lng], 16)
+          }
           return
         }
 
         const latLngs = route.geometry.coordinates.map(([lng, lat]: [number, number]) => [lat, lng])
         const polyline = L.polyline(latLngs, {
-          color: '#2563eb',
-          weight: 6,
-          opacity: 0.88,
+          color: isNavigating ? '#1d4ed8' : '#2563eb',
+          weight: isNavigating ? 8 : 6,
+          opacity: 0.9,
           lineJoin: 'round',
         }).addTo(routeLayerRef.current)
 
         const distanceKm = (route.distance / 1000).toFixed(1)
         const durationMin = Math.max(1, Math.round(route.duration / 60))
-        onRouteRef.current?.({ distanceKm, durationMin })
+        const firstLegSteps = route.legs?.[0]?.steps
+        const nextRoad = firstLegSteps?.[1]?.name || firstLegSteps?.[0]?.name || destination.name
 
-        mapRef.current.fitBounds(polyline.getBounds(), {
-          paddingTopLeft: [40, 155],
-          paddingBottomRight: [40, 270],
-          maxZoom: 16,
+        onRouteRef.current?.({
+          distanceKm,
+          durationMin,
+          nextStep: nextRoad ? `Continúa hacia ${nextRoad}` : `Dirígete hacia ${destination.name}`,
         })
+
+        if (!isNavigating && !hasFittedInitialRouteRef.current) {
+          hasFittedInitialRouteRef.current = true
+          mapRef.current.fitBounds(polyline.getBounds(), {
+            paddingTopLeft: [40, 155],
+            paddingBottomRight: [40, 270],
+            maxZoom: 16,
+          })
+        }
       })
       .catch(() => {
-        if (!cancelled && mapRef.current) {
+        if (!cancelled && mapRef.current && !hasFittedInitialRouteRef.current) {
+          hasFittedInitialRouteRef.current = true
           mapRef.current.flyTo([destination.lat, destination.lng], 16)
         }
       })
@@ -224,7 +290,7 @@ export function MapCanvas({
     return () => {
       cancelled = true
     }
-  }, [leafletReady, userLocation, destination, searchRadius])
+  }, [leafletReady, userLocation, destination, searchRadius, isNavigating])
 
   useEffect(() => {
     const L = window.L
@@ -291,7 +357,7 @@ export function MapCanvas({
         ref={containerRef}
         role="application"
         aria-roledescription="mapa"
-        aria-label="Mapa real de aparcamientos en Mataró"
+        aria-label="Mapa real de aparcamientos"
         className="absolute inset-0 z-0 h-full w-full bg-map"
       />
 
@@ -309,7 +375,9 @@ export function MapCanvas({
           type="button"
           aria-label="Centrar en mi ubicación"
           onClick={() =>
-            mapRef.current?.flyTo([userLocation.lat, userLocation.lng], 16, { duration: 0.5 })
+            mapRef.current?.flyTo([userLocation.lat, userLocation.lng], isNavigating ? 18 : 16, {
+              duration: 0.5,
+            })
           }
           className="flex size-[52px] items-center justify-center rounded-[18px] bg-surface text-[#c4622d] shadow-[0_4px_14px_rgba(31,45,49,0.14)] hover:bg-field"
         >
