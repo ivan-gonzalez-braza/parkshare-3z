@@ -36,6 +36,7 @@ export function MapCanvas({
   busyOverrides,
   selectedId,
   onSelect,
+  onMapClick,
   onRouteCalculated,
 }: {
   spots: Spot[]
@@ -47,6 +48,7 @@ export function MapCanvas({
   busyOverrides: Record<string, boolean>
   selectedId: string | null
   onSelect: (spot: Spot | null) => void
+  onMapClick?: (coords: Coords) => void
   onRouteCalculated?: (info: { distanceKm: string; durationMin: number; nextStep?: string } | null) => void
 }) {
   const { filters, spotColors } = useApp()
@@ -57,10 +59,12 @@ export function MapCanvas({
   const routeLayerRef = useRef<any>(null)
   const hasFittedInitialRouteRef = useRef(false)
   const onSelectRef = useRef(onSelect)
+  const onMapClickRef = useRef(onMapClick)
   const onRouteRef = useRef(onRouteCalculated)
   const [leafletReady, setLeafletReady] = useState(false)
 
   onSelectRef.current = onSelect
+  onMapClickRef.current = onMapClick
   onRouteRef.current = onRouteCalculated
 
   useEffect(() => {
@@ -96,7 +100,12 @@ export function MapCanvas({
       routeLayerRef.current = L.layerGroup().addTo(map)
       markersLayerRef.current = L.layerGroup().addTo(map)
 
-      map.on('click', () => onSelectRef.current(null))
+      map.on('click', (e: any) => {
+        onSelectRef.current(null)
+        if (e?.latlng && typeof e.latlng.lat === 'number' && typeof e.latlng.lng === 'number') {
+          onMapClickRef.current?.({ lat: e.latlng.lat, lng: e.latlng.lng })
+        }
+      })
 
       mapRef.current = map
       setLeafletReady(true)
@@ -295,7 +304,7 @@ export function MapCanvas({
     )
 
     const isCompact = Boolean(destination)
-    const size = isCompact ? 18 : 34
+    const size = isCompact ? 22 : 34
     const half = Math.round(size / 2)
 
     visibleSpots.forEach((spot) => {
@@ -315,18 +324,17 @@ export function MapCanvas({
             style="
               width: ${size}px;
               height: ${size}px;
-              border-radius: ${isCompact ? '6px' : '10px'};
+              border-radius: ${isCompact ? '7px' : '10px'};
               background: ${bg};
               color: ${fg};
               display: flex;
               align-items: center;
               justify-content: center;
               font-weight: 800;
-              font-size: ${isCompact ? '9px' : '13px'};
-              line-height: 1;
+              font-size: ${isCompact ? '10px' : '13px'};
               box-shadow: 0 1px 4px rgba(0,0,0,0.28);
               border: ${selected ? '2.5px solid #1f2d31' : '1.5px solid #ffffff'};
-              transform: ${selected ? 'scale(1.45)' : 'scale(1)'};
+              transform: ${selected ? 'scale(1.3)' : 'scale(1)'};
               transition: transform 150ms ease;
               cursor: pointer;
             "
@@ -349,7 +357,7 @@ export function MapCanvas({
         ref={containerRef}
         role="application"
         aria-roledescription="mapa"
-        aria-label="Mapa real de aparcamientos en Mataró"
+        aria-label="Mapa real de aparcamientos"
         className="absolute inset-0 z-0 h-full w-full bg-map"
       />
 
