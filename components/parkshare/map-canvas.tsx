@@ -2,82 +2,22 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { LocateFixed, Minus, Plus } from 'lucide-react'
+import { useApp } from './app-provider'
 import {
   SPOT_LABELS,
   type Coords,
   type Spot,
-  type SpotType,
   isSpotVisible,
   readableTextColor,
 } from './map-data'
 
-type LeafletLatLng = { lat: number; lng: number }
-type LeafletClickEvent = { latlng?: LeafletLatLng }
-
-type LeafletLayerGroup = {
-  addTo: (map: LeafletMap) => LeafletLayerGroup
-  clearLayers: () => void
-}
-
-type LeafletLayer = {
-  addTo: (target: LeafletMap | LeafletLayerGroup) => LeafletLayer
-  bindPopup: (html: string) => LeafletLayer
-  on: (event: string, handler: (e: unknown) => void) => LeafletLayer
-  getBounds: () => unknown
-}
-
-type LeafletMap = {
-  setView: (center: [number, number], zoom: number) => LeafletMap
-  on: (event: string, handler: (e: LeafletClickEvent) => void) => void
-  invalidateSize: () => void
-  remove: () => void
-  flyTo: (center: [number, number], zoom: number, options?: { duration?: number }) => void
-  getZoom: () => number
-  fitBounds: (bounds: unknown, options?: Record<string, unknown>) => void
-  zoomIn: () => void
-  zoomOut: () => void
-}
-
-type LeafletLib = {
-  map: (el: HTMLElement, options?: Record<string, unknown>) => LeafletMap
-  tileLayer: (url: string, options?: Record<string, unknown>) => LeafletLayer
-  layerGroup: () => LeafletLayerGroup
-  divIcon: (options: Record<string, unknown>) => unknown
-  marker: (coords: [number, number], options?: Record<string, unknown>) => LeafletLayer
-  circle: (coords: [number, number], options?: Record<string, unknown>) => LeafletLayer
-  polyline: (coords: [number, number][], options?: Record<string, unknown>) => LeafletLayer
-  DomEvent: {
-    stopPropagation: (e: unknown) => void
-  }
-}
-
 declare global {
   interface Window {
-    L?: LeafletLib
+    L: any
   }
 }
 
-export const DEFAULT_SPOT_COLORS: Record<SpotType | 'ocupada', string> = {
-  gratuita: '#18b259',
-  pago: '#2563eb',
-  carga: '#8b5cf6',
-  descarga: '#eab308',
-  movilidad: '#38bdf8',
-  moto: '#f97316',
-  ocupada: '#ef4444',
-}
-
-const DEFAULT_FILTERS: Record<SpotType | 'soloLibres', boolean> = {
-  gratuita: true,
-  pago: true,
-  carga: true,
-  descarga: true,
-  movilidad: true,
-  moto: true,
-  soloLibres: false,
-}
-
-const SPOT_BADGE_TEXT: Record<SpotType, string> = {
+const SPOT_BADGE_TEXT: Record<Spot['type'], string> = {
   gratuita: 'P',
   pago: '€',
   carga: '⚡',
@@ -86,53 +26,37 @@ const SPOT_BADGE_TEXT: Record<SpotType, string> = {
   moto: 'M',
 }
 
-type MapCanvasProps = {
-  spots: Spot[]
-  userLocation: Coords
-  heading?: number | null
-  destination: (Coords & { name: string }) | null
-  isNavigating: boolean
-  searchRadius: number
-  busyOverrides: Record<string, boolean>
-  filters?: Record<SpotType | 'soloLibres', boolean>
-  selectedId: string | null
-  onSelect: (spot: Spot | null) => void
-  onMapClick?: (coords: Coords) => void
-  onRouteCalculated?: (info: { distanceKm: string; durationMin: number; nextStep?: string } | null) => void
-}
-
 export function MapCanvas({
   spots,
   userLocation,
-  heading,
   destination,
-  isNavigating,
   searchRadius,
   busyOverrides,
-  filters = DEFAULT_FILTERS,
   selectedId,
   onSelect,
-  onMapClick,
   onRouteCalculated,
-}: MapCanvasProps) {
+}: {
+  spots: Spot[]
+  userLocation: Coords
+  destination: (Coords & { name: string }) | null
+  searchRadius: number
+  busyOverrides: Record<string, boolean>
+  selectedId: string | null
+  onSelect: (spot: Spot | null) => void
+  onRouteCalculated?: (info: { distanceKm: string; durationMin: number } | null) => void
+}) {
+  const { filters, spotColors } = useApp()
   const containerRef = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<LeafletMap | null>(null)
-  const markersLayerRef = useRef<LeafletLayerGroup | null>(null)
-  const userLayerRef = useRef<LeafletLayerGroup | null>(null)
-  const routeLayerRef = useRef<LeafletLayerGroup | null>(null)
-  const hasFittedInitialRouteRef = useRef(false)
+  const mapRef = useRef<any>(null)
+  const markersLayerRef = useRef<any>(null)
+  const userLayerRef = useRef<any>(null)
+  const routeLayerRef = useRef<any>(null)
   const onSelectRef = useRef(onSelect)
-  const onMapClickRef = useRef(onMapClick)
   const onRouteRef = useRef(onRouteCalculated)
   const [leafletReady, setLeafletReady] = useState(false)
 
   onSelectRef.current = onSelect
-  onMapClickRef.current = onMapClick
   onRouteRef.current = onRouteCalculated
-
-  useEffect(() => {
-    hasFittedInitialRouteRef.current = false
-  }, [destination?.lat, destination?.lng])
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -163,11 +87,8 @@ export function MapCanvas({
       routeLayerRef.current = L.layerGroup().addTo(map)
       markersLayerRef.current = L.layerGroup().addTo(map)
 
-      map.on('click', (e: LeafletClickEvent) => {
+      map.on('click', () => {
         onSelectRef.current(null)
-        if (e?.latlng && typeof e.latlng.lat === 'number' && typeof e.latlng.lng === 'number') {
-          onMapClickRef.current?.({ lat: e.latlng.lat, lng: e.latlng.lng })
-        }
       })
 
       mapRef.current = map
@@ -206,60 +127,24 @@ export function MapCanvas({
   useEffect(() => {
     const L = window.L
     const layer = userLayerRef.current
-    const map = mapRef.current
-    if (!leafletReady || !L || !layer || !map) return
+    if (!leafletReady || !L || !layer) return
 
     layer.clearLayers()
 
-    const rotation = typeof heading === 'number' && !Number.isNaN(heading) ? heading : 0
-
-    const userIcon = isNavigating
-      ? L.divIcon({
-          className: '',
-          iconSize: [44, 44],
-          iconAnchor: [22, 22],
-          html: `
-            <div title="Navegando" style="position:relative;width:44px;height:44px;display:flex;align-items:center;justify-content:center;">
-              <span style="position:absolute;inset:0;border-radius:9999px;background:rgba(37,99,235,0.22);"></span>
-              <div style="
-                width:32px;
-                height:32px;
-                border-radius:9999px;
-                background:#2563eb;
-                border:3px solid #ffffff;
-                box-shadow:0 3px 10px rgba(37,99,235,0.55);
-                display:flex;
-                align-items:center;
-                justify-content:center;
-                transform:rotate(${rotation}deg);
-              ">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="#ffffff">
-                  <path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/>
-                </svg>
-              </div>
-            </div>
-          `,
-        })
-      : L.divIcon({
-          className: '',
-          iconSize: [28, 28],
-          iconAnchor: [14, 14],
-          html: `
-            <div title="Tu ubicación" style="position:relative;width:28px;height:28px;display:flex;align-items:center;justify-content:center;">
-              <span style="position:absolute;inset:0;border-radius:9999px;background:rgba(49,135,244,0.28);"></span>
-              <span style="position:relative;width:14px;height:14px;border-radius:9999px;background:#3187f4;border:3px solid #ffffff;box-shadow:0 1px 4px rgba(0,0,0,0.4);"></span>
-            </div>
-          `,
-        })
+    const userIcon = L.divIcon({
+      className: '',
+      iconSize: [28, 28],
+      iconAnchor: [14, 14],
+      html: `
+        <div title="Tu ubicación" style="position:relative;width:28px;height:28px;display:flex;align-items:center;justify-content:center;">
+          <span style="position:absolute;inset:0;border-radius:9999px;background:rgba(49,135,244,0.28);"></span>
+          <span style="position:relative;width:14px;height:14px;border-radius:9999px;background:#3187f4;border:3px solid #ffffff;box-shadow:0 1px 4px rgba(0,0,0,0.4);"></span>
+        </div>
+      `,
+    })
 
     L.marker([userLocation.lat, userLocation.lng], { icon: userIcon, interactive: false }).addTo(layer)
-
-    if (isNavigating) {
-      map.flyTo([userLocation.lat, userLocation.lng], Math.max(map.getZoom(), 17), {
-        duration: 0.6,
-      })
-    }
-  }, [leafletReady, userLocation, heading, isNavigating])
+  }, [leafletReady, userLocation])
 
   useEffect(() => {
     const L = window.L
@@ -300,7 +185,7 @@ export function MapCanvas({
       .addTo(routeLayer)
 
     let cancelled = false
-    const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${userLocation.lng},${userLocation.lat};${destination.lng},${destination.lat}?overview=full&geometries=geojson&steps=true`
+    const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${userLocation.lng},${userLocation.lat};${destination.lng},${destination.lat}?overview=full&geometries=geojson`
 
     fetch(osrmUrl)
       .then((res) => res.json())
@@ -308,46 +193,30 @@ export function MapCanvas({
         if (cancelled || !routeLayerRef.current || !mapRef.current) return
         const route = data?.routes?.[0]
         if (!route?.geometry?.coordinates) {
-          if (!hasFittedInitialRouteRef.current) {
-            hasFittedInitialRouteRef.current = true
-            mapRef.current.flyTo([destination.lat, destination.lng], 16)
-          }
+          mapRef.current.flyTo([destination.lat, destination.lng], 16)
           return
         }
 
-        const latLngs = route.geometry.coordinates.map(
-          ([lng, lat]: [number, number]) => [lat, lng] as [number, number],
-        )
+        const latLngs = route.geometry.coordinates.map(([lng, lat]: [number, number]) => [lat, lng])
         const polyline = L.polyline(latLngs, {
-          color: isNavigating ? '#1d4ed8' : '#2563eb',
-          weight: isNavigating ? 8 : 6,
-          opacity: 0.9,
+          color: '#2563eb',
+          weight: 6,
+          opacity: 0.88,
           lineJoin: 'round',
         }).addTo(routeLayerRef.current)
 
         const distanceKm = (route.distance / 1000).toFixed(1)
         const durationMin = Math.max(1, Math.round(route.duration / 60))
-        const firstLegSteps = route.legs?.[0]?.steps
-        const nextRoad = firstLegSteps?.[1]?.name || firstLegSteps?.[0]?.name || destination.name
+        onRouteRef.current?.({ distanceKm, durationMin })
 
-        onRouteRef.current?.({
-          distanceKm,
-          durationMin,
-          nextStep: nextRoad ? `Continúa hacia ${nextRoad}` : `Dirígete hacia ${destination.name}`,
+        mapRef.current.fitBounds(polyline.getBounds(), {
+          paddingTopLeft: [40, 155],
+          paddingBottomRight: [40, 270],
+          maxZoom: 16,
         })
-
-        if (!isNavigating && !hasFittedInitialRouteRef.current) {
-          hasFittedInitialRouteRef.current = true
-          mapRef.current.fitBounds(polyline.getBounds(), {
-            paddingTopLeft: [40, 155],
-            paddingBottomRight: [40, 270],
-            maxZoom: 16,
-          })
-        }
       })
       .catch(() => {
-        if (!cancelled && mapRef.current && !hasFittedInitialRouteRef.current) {
-          hasFittedInitialRouteRef.current = true
+        if (!cancelled && mapRef.current) {
           mapRef.current.flyTo([destination.lat, destination.lng], 16)
         }
       })
@@ -355,7 +224,7 @@ export function MapCanvas({
     return () => {
       cancelled = true
     }
-  }, [leafletReady, userLocation, destination, searchRadius, isNavigating])
+  }, [leafletReady, userLocation, destination, searchRadius])
 
   useEffect(() => {
     const L = window.L
@@ -374,7 +243,7 @@ export function MapCanvas({
 
     visibleSpots.forEach((spot) => {
       const busy = busyOverrides[spot.id] ?? spot.busy
-      const bg = busy ? DEFAULT_SPOT_COLORS.ocupada : DEFAULT_SPOT_COLORS[spot.type]
+      const bg = busy ? spotColors.ocupada : spotColors[spot.type]
       const fg = readableTextColor(bg)
       const selected = spot.id === selectedId
       const badge = SPOT_BADGE_TEXT[spot.type]
@@ -408,13 +277,13 @@ export function MapCanvas({
       })
 
       const marker = L.marker([spot.lat, spot.lng], { icon })
-      marker.on('click', (e: unknown) => {
+      marker.on('click', (e: any) => {
         L.DomEvent.stopPropagation(e)
         onSelectRef.current(spot)
       })
       marker.addTo(layer)
     })
-  }, [leafletReady, spots, busyOverrides, filters, selectedId, destination])
+  }, [leafletReady, spots, busyOverrides, filters, spotColors, selectedId, destination])
 
   return (
     <>
@@ -422,7 +291,7 @@ export function MapCanvas({
         ref={containerRef}
         role="application"
         aria-roledescription="mapa"
-        aria-label="Mapa real de aparcamientos"
+        aria-label="Mapa real de aparcamientos en Mataró"
         className="absolute inset-0 z-0 h-full w-full bg-map"
       />
 
@@ -440,9 +309,7 @@ export function MapCanvas({
           type="button"
           aria-label="Centrar en mi ubicación"
           onClick={() =>
-            mapRef.current?.flyTo([userLocation.lat, userLocation.lng], isNavigating ? 18 : 16, {
-              duration: 0.5,
-            })
+            mapRef.current?.flyTo([userLocation.lat, userLocation.lng], 16, { duration: 0.5 })
           }
           className="flex size-[52px] items-center justify-center rounded-[18px] bg-surface text-[#c4622d] shadow-[0_4px_14px_rgba(31,45,49,0.14)] hover:bg-field"
         >
