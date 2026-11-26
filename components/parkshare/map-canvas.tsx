@@ -11,9 +11,49 @@ import {
   readableTextColor,
 } from './map-data'
 
+type LeafletLatLng = { lat: number; lng: number }
+type LeafletClickEvent = { latlng?: LeafletLatLng }
+
+type LeafletLayerGroup = {
+  addTo: (map: LeafletMap) => LeafletLayerGroup
+  clearLayers: () => void
+}
+
+type LeafletLayer = {
+  addTo: (target: LeafletMap | LeafletLayerGroup) => LeafletLayer
+  bindPopup: (html: string) => LeafletLayer
+  on: (event: string, handler: (e: unknown) => void) => LeafletLayer
+  getBounds: () => unknown
+}
+
+type LeafletMap = {
+  setView: (center: [number, number], zoom: number) => LeafletMap
+  on: (event: string, handler: (e: LeafletClickEvent) => void) => void
+  invalidateSize: () => void
+  remove: () => void
+  flyTo: (center: [number, number], zoom: number, options?: { duration?: number }) => void
+  getZoom: () => number
+  fitBounds: (bounds: unknown, options?: Record<string, unknown>) => void
+  zoomIn: () => void
+  zoomOut: () => void
+}
+
+type LeafletLib = {
+  map: (el: HTMLElement, options?: Record<string, unknown>) => LeafletMap
+  tileLayer: (url: string, options?: Record<string, unknown>) => LeafletLayer
+  layerGroup: () => LeafletLayerGroup
+  divIcon: (options: Record<string, unknown>) => unknown
+  marker: (coords: [number, number], options?: Record<string, unknown>) => LeafletLayer
+  circle: (coords: [number, number], options?: Record<string, unknown>) => LeafletLayer
+  polyline: (coords: [number, number][], options?: Record<string, unknown>) => LeafletLayer
+  DomEvent: {
+    stopPropagation: (e: unknown) => void
+  }
+}
+
 declare global {
   interface Window {
-    L: any
+    L?: LeafletLib
   }
 }
 
@@ -66,10 +106,10 @@ export function MapCanvas({
   onRouteCalculated,
 }: MapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<any>(null)
-  const markersLayerRef = useRef<any>(null)
-  const userLayerRef = useRef<any>(null)
-  const routeLayerRef = useRef<any>(null)
+  const mapRef = useRef<LeafletMap | null>(null)
+  const markersLayerRef = useRef<LeafletLayerGroup | null>(null)
+  const userLayerRef = useRef<LeafletLayerGroup | null>(null)
+  const routeLayerRef = useRef<LeafletLayerGroup | null>(null)
   const hasFittedInitialRouteRef = useRef(false)
   const onSelectRef = useRef(onSelect)
   const onMapClickRef = useRef(onMapClick)
@@ -113,7 +153,7 @@ export function MapCanvas({
       routeLayerRef.current = L.layerGroup().addTo(map)
       markersLayerRef.current = L.layerGroup().addTo(map)
 
-      map.on('click', (e: any) => {
+      map.on('click', (e: LeafletClickEvent) => {
         onSelectRef.current(null)
         if (e?.latlng && typeof e.latlng.lat === 'number' && typeof e.latlng.lng === 'number') {
           onMapClickRef.current?.({ lat: e.latlng.lat, lng: e.latlng.lng })
@@ -265,7 +305,7 @@ export function MapCanvas({
           return
         }
 
-        const latLngs = route.geometry.coordinates.map(([lng, lat]: [number, number]) => [lat, lng])
+        const latLngs = route.geometry.coordinates.map(([lng, lat]: [number, number]) => [lat, lng] as [number, number])
         const polyline = L.polyline(latLngs, {
           color: isNavigating ? '#1d4ed8' : '#2563eb',
           weight: isNavigating ? 8 : 6,
@@ -356,7 +396,7 @@ export function MapCanvas({
       })
 
       const marker = L.marker([spot.lat, spot.lng], { icon })
-      marker.on('click', (e: any) => {
+      marker.on('click', (e: unknown) => {
         L.DomEvent.stopPropagation(e)
         onSelectRef.current(spot)
       })
