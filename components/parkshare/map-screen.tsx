@@ -14,7 +14,7 @@ import {
   X,
 } from 'lucide-react'
 import { useApp } from './app-provider'
-import { MapCanvas } from './map-canvas'
+import { DEFAULT_SPOT_COLORS, MapCanvas } from './map-canvas'
 import {
   SPOTS,
   SPOT_LABELS,
@@ -41,7 +41,13 @@ type SearchSuggestion = {
 }
 
 export function MapScreen() {
-  const { user, openDrawer, setTab, spotColors, showToast } = useApp()
+  const app = useApp() as any
+  const user = app?.user ?? { name: 'Usuario', avatar: '' }
+  const openDrawer = app?.openDrawer ?? (() => {})
+  const setTab = app?.setTab ?? (() => {})
+  const showToast = app?.showToast ?? (() => {})
+  const spotColors: Record<SpotType | 'ocupada', string> = app?.spotColors ?? DEFAULT_SPOT_COLORS
+
   const [query, setQuery] = useState('')
   const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([])
   const [searching, setSearching] = useState(false)
@@ -129,9 +135,11 @@ export function MapScreen() {
           const locality =
             addr.city || addr.town || addr.village || addr.municipality || addr.state || ''
           const country = addr.country || ''
-          const subtitleParts = [addr.road && addr.road !== primaryName ? addr.road : '', locality, country].filter(
-            Boolean,
-          )
+          const subtitleParts = [
+            addr.road && addr.road !== primaryName ? addr.road : '',
+            locality,
+            country,
+          ].filter(Boolean)
 
           return {
             id: String(item.place_id),
@@ -323,6 +331,7 @@ export function MapScreen() {
           isNavigating={isNavigating}
           searchRadius={DESTINATION_RADIUS}
           busyOverrides={busyOverrides}
+          filters={filters}
           selectedId={selected?.id ?? null}
           onSelect={(spot) => {
             setSelected(spot)
