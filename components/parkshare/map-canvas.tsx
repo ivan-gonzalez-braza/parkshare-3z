@@ -67,6 +67,16 @@ export const DEFAULT_SPOT_COLORS: Record<SpotType | 'ocupada', string> = {
   ocupada: '#ef4444',
 }
 
+const DEFAULT_FILTERS: Record<SpotType | 'soloLibres', boolean> = {
+  gratuita: true,
+  pago: true,
+  carga: true,
+  descarga: true,
+  movilidad: true,
+  moto: true,
+  soloLibres: false,
+}
+
 const SPOT_BADGE_TEXT: Record<SpotType, string> = {
   gratuita: 'P',
   pago: '€',
@@ -84,7 +94,7 @@ type MapCanvasProps = {
   isNavigating: boolean
   searchRadius: number
   busyOverrides: Record<string, boolean>
-  filters: Record<SpotType | 'soloLibres', boolean>
+  filters?: Record<SpotType | 'soloLibres', boolean>
   selectedId: string | null
   onSelect: (spot: Spot | null) => void
   onMapClick?: (coords: Coords) => void
@@ -99,7 +109,7 @@ export function MapCanvas({
   isNavigating,
   searchRadius,
   busyOverrides,
-  filters,
+  filters = DEFAULT_FILTERS,
   selectedId,
   onSelect,
   onMapClick,
@@ -305,7 +315,9 @@ export function MapCanvas({
           return
         }
 
-        const latLngs = route.geometry.coordinates.map(([lng, lat]: [number, number]) => [lat, lng] as [number, number])
+        const latLngs = route.geometry.coordinates.map(
+          ([lng, lat]: [number, number]) => [lat, lng] as [number, number],
+        )
         const polyline = L.polyline(latLngs, {
           color: isNavigating ? '#1d4ed8' : '#2563eb',
           weight: isNavigating ? 8 : 6,
