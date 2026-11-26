@@ -71,8 +71,7 @@ export const SPOTS: Spot[] = [
   { id: 'solar-sorrall', lat: 41.54580, lng: 2.43350, type: 'gratuita', busy: false, vertical: false, street: 'Zona Esportiva El Sorrall', capacity: 80 },
 ]
 
-// Calles peatonales del Centre donde no se puede circular ni aparcar
-const PEDESTRIAN_STREETS = [
+const EXCLUDED_STREETS = [
   'carrer de barcelona',
   'carrer nou',
   'plaça gran',
@@ -80,6 +79,9 @@ const PEDESTRIAN_STREETS = [
   'carrer de santa maria',
   'carrer de sant cristòfor',
   'carrer d’argentona',
+  'c-32',
+  'autopista',
+  'ronda de mataró',
 ]
 
 function offsetCoord(origin: Coords, northMeters: number, eastMeters: number): Coords {
@@ -88,20 +90,22 @@ function offsetCoord(origin: Coords, northMeters: number, eastMeters: number): C
   return { lat: origin.lat + dLat, lng: origin.lng + dLng }
 }
 
-// Punto medio real de un tramo de calle (evita poner pines en las esquinas/cruces)
-function segmentMidpoint(coords: [number, number][]): Coords | null {
-  if (!Array.isArray(coords) || coords.length < 2) return null
-  const midIdx = Math.floor(coords.length / 2)
-  if (coords.length === 2) {
-    return {
-      lat: (coords[0][1] + coords[1][1]) / 2,
-      lng: (coords[0][0] + coords[1][0]) / 2,
-    }
-  }
-  return { lat: coords[midIdx][1], lng: coords[midIdx][0] }
+function isExcludedRoad(name: string): boolean {
+  const lower = name.trim().toLowerCase()
+  if (!lower) return true
+  return EXCLUDED_STREETS.some((ex) => lower.includes(ex))
 }
 
-// Obtiene plazas reales en las calles transitables de cualquier punto de Mataró
+function pickSpotType(seed: number, isCentreZone: boolean): SpotType {
+  if (isCentreZone) {
+    const centreTypes: SpotType[] = ['pago', 'pago', 'gratuita', 'gratuita', 'pago', 'carga', 'movilidad', 'moto']
+    return centreTypes[seed % centreTypes.length]
+  }
+  const barrioTypes: SpotType[] = ['gratuita', 'gratuita', 'gratuita', 'gratuita', 'pago', 'carga', 'moto']
+  return barrioTypes[seed % barrioTypes.length]
+}
+
+// Cubre TODAS las calles interiores y principales dentro del radio usando malla densa snapped a calzadas reales
 export async function fetchRealSpotsNear(
   dest: Coords & { name: string },
   radiusMeters = 500,
@@ -114,7 +118,7 @@ export async function fetchRealSpotsNear(
 
   const combined: Spot[] = [...localMatches]
 
-  const tryAddSpot = (candidate: Spot, minGap = 52) => {
+  const tryAddSpot = (candidate: Spot, minGap = 44) => {
     if (distanceBetweenCoords(dest, { lat: candidate.lat, lng: candidate.lng }) > safeRadius) return
     const exists = combined.some(
       (m) => distanceBetweenCoords({ lat: candidate.lat, lng: candidate.lng }, { lat: m.lat, lng: m.lng }) < minGap,
@@ -122,83 +126,57 @@ export async function fetchRealSpotsNear(
     if (!exists) combined.push(candidate)
   }
 
-  // Malla de 20 micro-trayectos de manzana por todo el radio de 500m (funciona en todo Mataró)
-  const lanes = [-360, -210, -70, 70, 210, 360]
-  const edge = 420
-  const routePairs: [Coords, Coords][] = []
+  const isCentreZone = distanceBetweenCoords(dest, { lat: 41.5391, lng: 2.4445 }) < 950
 
-  for (const offset of lanes) {
-    routePairs.push([offsetCoord(dest, edge, offset), offsetCoord(dest, -edge, offset)])
-    routePairs.push([offsetCoord(dest, offset, -edge), offsetCoord(dest, offset, edge)])
+  // Malla interior cada 95 metros en X e Y para entrar en TODAS las calles secundarias del barrio
+  const gridOffsets = [-420, -325, -230, -135, -45, 45, 135, 230, 325, 420]
+  const gridPoints: { coord: Coords; seed: number }[] = []
+  let counter = 0
+
+  for (const north of gridOffsets) {
+    for (const east of gridOffsets) {
+      const candidateCoord = offsetCoord(dest, north, east)
+      if (distanceBetweenCoords(dest, candidateCoord) <= safeRadius) {
+        gridPoints.push({ coord: candidateCoord, seed: counter++ })
+      }
+    }
   }
 
-  // Determinar si estamos en la zona centro/eixample (donde predominan zonas azules de pago)
-  const isCentreZone =
-    distanceBetweenCoords(dest, { lat: 41.5391, lng: 2.4445 }) < 950
-
+  // Ajustar cada punto de la malla a la calzada real más cercana (OSRM nearest)
   await Promise.all(
-    routePairs.map(async ([from, to], routeIdx) => {
+    gridPoints.map(async ({ coord, seed }) => {
       try {
-        const url = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=false&geometries=geojson&steps=true`
-        const res = await fetch(url)
+        const res = await fetch(
+          `https://router.project-osrm.org/nearest/v1/driving/${coord.lng},${coord.lat}?number=1`,
+        )
         if (!res.ok) return
         const data = await res.json()
-        const steps = data?.routes?.[0]?.legs?.[0]?.steps
-        if (!Array.isArray(steps)) return
+        const wp = data?.waypoints?.[0]
+        if (!wp?.location) return
 
-        steps.forEach((step: any, stepIdx: number) => {
-          const maneuverType = step?.maneuver?.type
-          // Saltar rotondas y maniobras de incorporación sin tramo de estacionamiento
-          if (maneuverType === 'roundabout' || maneuverType === 'rotary') return
+        // Si no hay calle a menos de 45 m (ej. parque, zona peatonal o mar), descartar
+        if (typeof wp.distance === 'number' && wp.distance > 45) return
 
-          // Solo tramos de calle con al menos 35 metros de longitud (donde caben coches aparcados)
-          if (typeof step.distance === 'number' && step.distance < 35) return
+        const roadName = (wp.name || '').trim()
+        if (isExcludedRoad(roadName)) return
 
-          const rawName: string = (step.name || '').trim()
-          const lowerName = rawName.toLowerCase()
+        const [snappedLng, snappedLat] = wp.location
+        const isBattery = seed % 3 === 1
 
-          // Excluir autopistas (C-32 / B-40 / N-II) y calles peatonales
-          if (
-            !rawName ||
-            lowerName.includes('c-32') ||
-            lowerName.includes('autopista') ||
-            lowerName.includes('ronda de mataró') ||
-            PEDESTRIAN_STREETS.some((p) => lowerName.includes(p))
-          ) {
-            return
-          }
-
-          const coords: [number, number][] = step?.geometry?.coordinates || []
-          const mid = segmentMidpoint(coords)
-          if (!mid) return
-
-          const seed = routeIdx * 17 + stepIdx * 5
-          let type: SpotType = 'gratuita'
-          if (isCentreZone) {
-            // En el Centre/Eixample: mezcla realista de zona azul de pago, gratuita, carga y PMR
-            const centreTypes: SpotType[] = ['pago', 'pago', 'gratuita', 'gratuita', 'pago', 'carga', 'movilidad', 'moto']
-            type = centreTypes[seed % centreTypes.length]
-          } else {
-            const barrioTypes: SpotType[] = ['gratuita', 'gratuita', 'gratuita', 'gratuita', 'pago', 'carga', 'moto']
-            type = barrioTypes[seed % barrioTypes.length]
-          }
-
-          const isBattery = seed % 3 === 1
-          tryAddSpot(
-            {
-              id: `street-spot-${routeIdx}-${stepIdx}`,
-              lat: mid.lat,
-              lng: mid.lng,
-              type,
-              busy: seed % 3 === 0,
-              vertical: isBattery,
-              street: `Calzada ${isBattery ? 'batería' : 'cordón'} · ${rawName}`,
-            },
-            52,
-          )
-        })
+        tryAddSpot(
+          {
+            id: `mataro-street-${seed}`,
+            lat: snappedLat,
+            lng: snappedLng,
+            type: pickSpotType(seed, isCentreZone),
+            busy: seed % 3 === 0,
+            vertical: isBattery,
+            street: `Calzada ${isBattery ? 'batería' : 'cordón'} · ${roadName}`,
+          },
+          44,
+        )
       } catch {
-        // Ignorar tramo individual si falla
+        // Ignorar punto individual si falla
       }
     }),
   )
