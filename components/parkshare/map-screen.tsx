@@ -40,8 +40,36 @@ type SearchSuggestion = {
   lng: number
 }
 
+type NominatimItem = {
+  place_id: number | string
+  name?: string
+  display_name: string
+  lat: string
+  lon: string
+  address?: {
+    road?: string
+    pedestrian?: string
+    square?: string
+    suburb?: string
+    city?: string
+    town?: string
+    village?: string
+    municipality?: string
+    state?: string
+    country?: string
+  }
+}
+
+type AppContextShape = {
+  user?: { name: string; avatar?: string }
+  openDrawer?: () => void
+  setTab?: (tab: 'map' | 'favorites' | 'history' | 'profile') => void
+  showToast?: (msg: string) => void
+  spotColors?: Record<SpotType | 'ocupada', string>
+}
+
 export function MapScreen() {
-  const app = useApp() as any
+  const app = useApp() as AppContextShape
   const user = app?.user ?? { name: 'Usuario', avatar: '' }
   const openDrawer = app?.openDrawer ?? (() => {})
   const setTab = app?.setTab ?? (() => {})
@@ -121,8 +149,9 @@ export function MapScreen() {
           signal: controller.signal,
           headers: { 'Accept-Language': 'es' },
         })
-        const data = await res.json()
-        const mapped: SearchSuggestion[] = (Array.isArray(data) ? data : []).map((item: any) => {
+        const data: unknown = await res.json()
+        const items = Array.isArray(data) ? (data as NominatimItem[]) : []
+        const mapped: SearchSuggestion[] = items.map((item) => {
           const addr = item.address || {}
           const primaryName =
             item.name ||
@@ -227,7 +256,7 @@ export function MapScreen() {
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.lat}&lon=${coords.lng}&zoom=18&addressdetails=1`,
         { headers: { 'Accept-Language': 'es' } },
       )
-      const data = await res.json()
+      const data = (await res.json()) as Partial<NominatimItem>
       const addr = data?.address || {}
       const realPlaceName =
         data?.name ||
