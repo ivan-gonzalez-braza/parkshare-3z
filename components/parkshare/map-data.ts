@@ -25,7 +25,7 @@ export const SPOT_LABELS: Record<SpotType, string> = {
 
 export const USER_POSITION: Coords = { lat: 41.5391, lng: 2.4445 }
 
-// Base de datos de zonas reales de aparcamiento verificadas en Mataró (parkings, solares y tramos reales en calzada)
+// Equipamientos oficiales PUMSA, solares municipales y puntos verificados de Mataró
 export const SPOTS: Spot[] = [
   // --- TECNOCAMPUS / EL RENGLE / PASSEIG DE MARINA / PLA D'EN BOET ---
   { id: 'tc-subterraneo', lat: 41.52820, lng: 2.43420, type: 'pago', busy: false, vertical: false, street: 'Parking Subterráneo TecnoCampus (Av. Ernest Lluch)' },
@@ -100,116 +100,150 @@ export const SPOTS: Spot[] = [
   { id: 'girona-02', lat: 41.54690, lng: 2.43580, type: 'gratuita', busy: true, vertical: false, street: 'Carrer de Girona · Tramo Sur' },
 ]
 
-// Consulta zonas de aparcamiento reales mapeadas en OpenStreetMap (parkings, solares, bahías laterales y electrolineras)
+// Caché en memoria de TODOS los aparcamientos reales de todo el término municipal de Mataró
+let mataroCitySpotsCache: Spot[] | null = null
+let mataroFetchPromise: Promise<Spot[]> | null = null
+
+function samplePolygonEdges(points: { lat: number; lon: number }[], stepMeters = 45): Coords[] {
+  const result: Coords[] = []
+  for (let i = 0; i < points.length - 1; i++) {
+    const p1 = { lat: points[i].lat, lng: points[i].lon }
+    const p2 = { lat: points[i + 1].lat, lng: points[i + 1].lon }
+    const dist = distanceBetweenCoords(p1, p2)
+    if (dist < 15) continue
+
+    const steps = Math.max(1, Math.floor(dist / stepMeters))
+    for (let s = 0; s < steps; s++) {
+      const t = s / steps
+      result.push({
+        lat: p1.lat + (p2.lat - p1.lat) * t,
+        lng: p1.lng + (p2.lng - p1.lng) * t,
+      })
+    }
+  }
+  return result
+}
+
+// Descarga una sola vez todos los parkings, solares, bahías laterales y electrolineras de TODO Mataró
+async function loadAllMataroRealSpots(): Promise<Spot[]> {
+  if (mataroCitySpotsCache) return mataroCitySpotsCache
+  if (mataroFetchPromise) return mataroFetchPromise
+
+  mataroFetchPromise = (async () => {
+    const allSpots: Spot[] = [...SPOTS]
+
+    const addIfUnique = (candidate: Spot, minGap = 24) => {
+      const exists = allSpots.some(
+        (m) => distanceBetweenCoords({ lat: candidate.lat, lng: candidate.lng }, { lat: m.lat, lng: m.lng }) < minGap,
+      )
+      if (!exists) allSpots.push(candidate)
+    }
+
+    // Bounding box completo de todo Mataró (de Cabrera/Boet a Sant Simó, y de la playa a Cirera/Hospital)
+    const bbox = '41.5220,2.4180,41.5640,2.4680'
+    const query = `[out:json][timeout:15];(node["amenity"="parking"](${bbox});way["amenity"="parking"](${bbox});relation["amenity"="parking"](${bbox});way["parking"~"street_side|surface|lane"](${bbox});way["parking:lane:both"~"parallel|diagonal|perpendicular"](${bbox});way["parking:lane:left"~"parallel|diagonal|perpendicular"](${bbox});way["parking:lane:right"~"parallel|diagonal|perpendicular"](${bbox});node["amenity"="charging_station"](${bbox});node["amenity"="motorcycle_parking"](${bbox}););out geom;`
+
+    const endpoints = [
+      'https://overpass-api.de/api/interpreter',
+      'https://overpass.kumi.systems/api/interpreter',
+    ]
+
+    for (const baseUrl of endpoints) {
+      try {
+        const controller = new AbortController()
+        const timer = setTimeout(() => controller.abort(), 8000)
+        const res = await fetch(`${baseUrl}?data=${encodeURIComponent(query)}`, {
+          signal: controller.signal,
+        })
+        clearTimeout(timer)
+
+        if (!res.ok) continue
+        const data = await res.json()
+        const elements = Array.isArray(data?.elements) ? data.elements : []
+        if (elements.length === 0) continue
+
+        elements.forEach((el: any, idx: number) => {
+          const tags = el.tags || {}
+          let type: SpotType = 'gratuita'
+          if (tags.amenity === 'charging_station') {
+            type = 'carga'
+          } else if (tags.amenity === 'motorcycle_parking') {
+            type = 'moto'
+          } else if (
+            tags.fee === 'yes' ||
+            tags.parking === 'underground' ||
+            tags.parking === 'multi-storey'
+          ) {
+            type = 'pago'
+          } else if (tags['capacity:disabled'] && !tags.capacity) {
+            type = 'movilidad'
+          }
+
+          const streetName =
+            tags.name ||
+            tags['addr:street'] ||
+            (tags.parking === 'street_side'
+              ? 'Aparcamiento en calzada · Mataró'
+              : 'Zona de aparcamiento · Mataró')
+
+          const numericId = Number(el.id || idx)
+
+          // Si es un polígono real de aparcamiento o tramo de calzada con geometría, repartir puntos reales a lo largo de su trazado
+          if (Array.isArray(el.geometry) && el.geometry.length >= 2) {
+            const sampled = samplePolygonEdges(el.geometry, 42)
+            sampled.forEach((pt, subIdx) => {
+              addIfUnique({
+                id: `mataro-osm-${el.id}-${subIdx}`,
+                lat: pt.lat,
+                lng: pt.lng,
+                type,
+                busy: (numericId + subIdx) % 3 === 0,
+                vertical: tags.parking === 'street_side' || subIdx % 2 === 1,
+                street: streetName,
+                capacity: tags.capacity ? Number(tags.capacity) : undefined,
+              })
+            })
+            return
+          }
+
+          const lat = el.lat ?? el.center?.lat
+          const lng = el.lon ?? el.center?.lon
+          if (typeof lat === 'number' && typeof lng === 'number') {
+            addIfUnique({
+              id: `mataro-osm-${el.type}-${el.id}`,
+              lat,
+              lng,
+              type,
+              busy: numericId % 3 === 0,
+              vertical: idx % 2 === 1,
+              street: streetName,
+              capacity: tags.capacity ? Number(tags.capacity) : undefined,
+            })
+          }
+        })
+
+        break
+      } catch {
+        // Probar siguiente mirror si falla
+      }
+    }
+
+    mataroCitySpotsCache = allSpots
+    return allSpots
+  })()
+
+  return mataroFetchPromise
+}
+
+// Filtra dentro de todo Mataró los aparcamientos reales que caen dentro del radio del destino elegido
 export async function fetchRealSpotsNear(
   dest: Coords & { name: string },
   radiusMeters = 500,
 ): Promise<Spot[]> {
-  const localMatches = SPOTS.filter(
+  const allMataro = await loadAllMataroRealSpots()
+  return allMataro.filter(
     (spot) => distanceBetweenCoords(dest, { lat: spot.lat, lng: spot.lng }) <= radiusMeters,
   )
-
-  const combined: Spot[] = [...localMatches]
-
-  const tryAddSpot = (candidate: Spot) => {
-    if (distanceBetweenCoords(dest, { lat: candidate.lat, lng: candidate.lng }) > radiusMeters) return
-    const alreadyExists = combined.some(
-      (m) => distanceBetweenCoords({ lat: candidate.lat, lng: candidate.lng }, { lat: m.lat, lng: m.lng }) < 24,
-    )
-    if (!alreadyExists) combined.push(candidate)
-  }
-
-  const endpoints = [
-    'https://overpass-api.de/api/interpreter',
-    'https://overpass.kumi.systems/api/interpreter',
-  ]
-
-  const query = `[out:json][timeout:8];(node["amenity"="parking"](around:${radiusMeters},${dest.lat},${dest.lng});way["amenity"="parking"](around:${radiusMeters},${dest.lat},${dest.lng});way["parking"="street_side"](around:${radiusMeters},${dest.lat},${dest.lng});way["parking:lane:both"~"parallel|diagonal|perpendicular"](around:${radiusMeters},${dest.lat},${dest.lng});way["parking:lane:left"~"parallel|diagonal|perpendicular"](around:${radiusMeters},${dest.lat},${dest.lng});way["parking:lane:right"~"parallel|diagonal|perpendicular"](around:${radiusMeters},${dest.lat},${dest.lng});node["amenity"="charging_station"](around:${radiusMeters},${dest.lat},${dest.lng});node["amenity"="motorcycle_parking"](around:${radiusMeters},${dest.lat},${dest.lng}););out geom;`
-
-  for (const baseUrl of endpoints) {
-    try {
-      const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), 5000)
-      const res = await fetch(`${baseUrl}?data=${encodeURIComponent(query)}`, {
-        signal: controller.signal,
-      })
-      clearTimeout(timer)
-
-      if (!res.ok) continue
-      const data = await res.json()
-      const elements = Array.isArray(data?.elements) ? data.elements : []
-
-      elements.forEach((el: any, idx: number) => {
-        const tags = el.tags || {}
-        let type: SpotType = 'gratuita'
-        if (tags.amenity === 'charging_station') {
-          type = 'carga'
-        } else if (tags.amenity === 'motorcycle_parking') {
-          type = 'moto'
-        } else if (
-          tags.fee === 'yes' ||
-          tags.parking === 'underground' ||
-          tags.parking === 'multi-storey'
-        ) {
-          type = 'pago'
-        } else if (tags['capacity:disabled'] && !tags.capacity) {
-          type = 'movilidad'
-        }
-
-        const streetName =
-          tags.name ||
-          tags['addr:street'] ||
-          (tags.parking === 'street_side'
-            ? `Aparcamiento en calzada · ${dest.name}`
-            : `Zona de aparcamiento · ${dest.name}`)
-
-        const numericId = Number(el.id || idx)
-
-        // Si el parking real en OSM es un polígono con varios vértices (como el paseo marítimo o un solar grande),
-        // añadimos puntos reales en sus extremos y centro
-        if (Array.isArray(el.geometry) && el.geometry.length >= 4) {
-          const indices = [0, Math.floor(el.geometry.length / 2)]
-          indices.forEach((gIdx, subIdx) => {
-            const pt = el.geometry[gIdx]
-            if (typeof pt?.lat === 'number' && typeof pt?.lon === 'number') {
-              tryAddSpot({
-                id: `osm-poly-${el.id}-${subIdx}`,
-                lat: pt.lat,
-                lng: pt.lon,
-                type,
-                busy: (numericId + subIdx) % 3 === 0,
-                vertical: tags.parking === 'street_side' || subIdx === 1,
-                street: streetName,
-                capacity: tags.capacity ? Number(tags.capacity) : undefined,
-              })
-            }
-          })
-          return
-        }
-
-        const lat = el.lat ?? el.geometry?.[0]?.lat
-        const lng = el.lon ?? el.geometry?.[0]?.lon
-        if (typeof lat !== 'number' || typeof lng !== 'number') return
-
-        tryAddSpot({
-          id: `osm-real-${el.type}-${el.id}`,
-          lat,
-          lng,
-          type,
-          busy: numericId % 3 === 0,
-          vertical: tags.parking === 'street_side' || idx % 2 === 1,
-          street: streetName,
-          capacity: tags.capacity ? Number(tags.capacity) : undefined,
-        })
-      })
-
-      break
-    } catch {
-      // Probar siguiente servidor Overpass
-    }
-  }
-
-  return combined
 }
 
 export function distanceBetweenCoords(a: Coords, b: Coords) {
