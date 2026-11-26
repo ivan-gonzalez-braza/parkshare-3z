@@ -25,46 +25,41 @@ export const SPOT_LABELS: Record<SpotType, string> = {
 
 export const USER_POSITION: Coords = { lat: 41.5391, lng: 2.4445 }
 
-// Coordenadas verificadas sobre asfalto y zonas de estacionamiento reales de Mataró
+// Base de datos de aparcamientos y zonas reales verificadas en Mataró
 export const SPOTS: Spot[] = [
-  // --- ESTACIÓ RENFE / EIXAMPLE / RONDA BARCELÓ / PASSEIG MARÍTIM ---
-  { id: 'estacio-moto', lat: 41.53548, lng: 2.44642, type: 'moto', busy: false, vertical: true, street: 'Plaça de Miquel Biada (Estació RENFE)' },
-  { id: 'estacio-pmr', lat: 41.53525, lng: 2.44615, type: 'movilidad', busy: false, vertical: false, street: 'Plaça de Miquel Biada · PMR Estació' },
-  { id: 'biada-descarga', lat: 41.53645, lng: 2.44585, type: 'descarga', busy: false, vertical: false, street: 'Ronda de Barceló / Biada (C/D)' },
-  { id: 'barcelo-azul-1', lat: 41.53610, lng: 2.44465, type: 'pago', busy: false, vertical: false, street: 'Ronda de Barceló (Zona Azul)' },
-  { id: 'barcelo-azul-2', lat: 41.53685, lng: 2.44390, type: 'pago', busy: true, vertical: false, street: 'Ronda de Barceló / Jaume Recoder' },
-  { id: 'cooperativa-1', lat: 41.53640, lng: 2.44510, type: 'pago', busy: false, vertical: false, street: 'Carrer de la Cooperativa' },
-  { id: 'camiral-estacio', lat: 41.53765, lng: 2.44595, type: 'pago', busy: true, vertical: false, street: 'Camí Ral (Eixample)' },
-  { id: 'solar-varador', lat: 41.53572, lng: 2.44985, type: 'gratuita', busy: false, vertical: false, street: 'Explanada Passeig Marítim - Varador', capacity: 160 },
-  { id: 'puerto-parking', lat: 41.53268, lng: 2.44675, type: 'pago', busy: false, vertical: false, street: 'Parking Port de Mataró (Dársena)', capacity: 137 },
-  { id: 'puerto-ev', lat: 41.53295, lng: 2.44710, type: 'carga', busy: false, vertical: false, street: 'Port de Mataró · Punto de Carga EV' },
-  { id: 'solar-torre-llauder', lat: 41.53695, lng: 2.44185, type: 'gratuita', busy: false, vertical: false, street: 'Solar Carrer Roma, 3 (Torre Llauder)', capacity: 178 },
-  { id: 'solar-sant-simo', lat: 41.54045, lng: 2.46015, type: 'gratuita', busy: false, vertical: false, street: 'Solar Passeig Marítim - Sant Simó', capacity: 210 },
-
   // --- CENTRE / EIXAMPLE / HAVANA ---
   { id: 'pumsa-tereses', lat: 41.53912, lng: 2.44356, type: 'pago', busy: false, vertical: false, street: 'Plaça de les Tereses, 42 (PUMSA)' },
   { id: 'pumsa-tereses-ev', lat: 41.53925, lng: 2.44372, type: 'carga', busy: false, vertical: false, street: 'Plaça de les Tereses (Recarga EV)' },
   { id: 'pumsa-parc-central', lat: 41.53854, lng: 2.44781, type: 'pago', busy: true, vertical: false, street: 'Camí de la Geganta, 2 (Parc Central)' },
   { id: 'pumsa-granollers', lat: 41.54321, lng: 2.44112, type: 'pago', busy: false, vertical: false, street: 'Camí de la Geganta, 82 (Pl. Granollers)' },
   { id: 'pumsa-cuba', lat: 41.54395, lng: 2.43821, type: 'pago', busy: false, vertical: false, street: 'Plaça de Cuba, 25 (PUMSA)' },
-  { id: 'rambla-movilidad', lat: 41.53820, lng: 2.44490, type: 'movilidad', busy: false, vertical: false, street: 'La Rambla, 18 (PMR)' },
-  { id: 'havana-01', lat: 41.54080, lng: 2.45250, type: 'gratuita', busy: false, vertical: false, street: 'Carrer de l’Havana' },
+  { id: 'rambla-movilidad', lat: 41.53820, lng: 2.44490, type: 'movilidad', busy: false, vertical: false, street: 'La Rambla, 18' },
+  { id: 'biada-descarga', lat: 41.53640, lng: 2.44610, type: 'descarga', busy: false, vertical: false, street: 'Ronda de Barceló / Biada' },
+  { id: 'estacio-moto', lat: 41.53530, lng: 2.44720, type: 'moto', busy: false, vertical: true, street: 'Plaça de Miquel Biada (Estació RENFE)' },
+  { id: 'havana-01', lat: 41.54080, lng: 2.45250, type: 'gratuita', busy: false, vertical: false, street: 'Carrer de l’Havana · Zona estacionamiento' },
   { id: 'havana-02', lat: 41.54160, lng: 2.45380, type: 'gratuita', busy: true, vertical: false, street: 'Ronda de Cervantes (Havana)' },
+
+  // --- PASSEIG MARÍTIM / PLATJA / PORT ---
+  { id: 'solar-varador', lat: 41.53321, lng: 2.45123, type: 'gratuita', busy: false, vertical: false, street: 'Passeig Marítim - Varador', capacity: 160 },
+  { id: 'solar-puerto', lat: 41.53450, lng: 2.44890, type: 'gratuita', busy: true, vertical: false, street: 'Passeig Marítim - Puerto de Mataró', capacity: 137 },
+  { id: 'solar-sant-simo', lat: 41.53980, lng: 2.46120, type: 'gratuita', busy: false, vertical: false, street: 'Passeig Marítim - Sant Simó', capacity: 210 },
+  { id: 'puerto-ev', lat: 41.53390, lng: 2.44940, type: 'carga', busy: false, vertical: false, street: 'Port de Mataró · Punto de Carga' },
 
   // --- TECNOCAMPUS / EL RENGLE / PLA D'EN BOET ---
   { id: 'tc-subterraneo', lat: 41.52820, lng: 2.43420, type: 'pago', busy: false, vertical: false, street: 'Parking Subterráneo TecnoCampus (Av. Ernest Lluch)' },
-  { id: 'tc-rengle-libre', lat: 41.52910, lng: 2.43540, type: 'gratuita', busy: false, vertical: false, street: 'Avinguda d’Ernest Lluch (El Rengle)' },
-  { id: 'tc-rengle-ocupada', lat: 41.52980, lng: 2.43630, type: 'gratuita', busy: true, vertical: true, street: 'Carrer de Tordera (El Rengle)' },
+  { id: 'tc-rengle-libre', lat: 41.52910, lng: 2.43540, type: 'gratuita', busy: false, vertical: false, street: 'Avinguda d’Ernest Lluch · El Rengle' },
+  { id: 'tc-rengle-ocupada', lat: 41.52980, lng: 2.43630, type: 'gratuita', busy: true, vertical: true, street: 'Carrer de Tordera · Batería El Rengle' },
   { id: 'tc-ev', lat: 41.52850, lng: 2.43480, type: 'carga', busy: false, vertical: false, street: 'Electrolinera TecnoCampus · Av. Ernest Lluch' },
+  { id: 'solar-torre-llauder', lat: 41.53720, lng: 2.44190, type: 'gratuita', busy: false, vertical: false, street: 'Carrer Roma, 3 (Torre Llauder)', capacity: 178 },
   { id: 'boet-poligono-1', lat: 41.53180, lng: 2.43150, type: 'gratuita', busy: false, vertical: false, street: 'Carrer de Pablo Iglesias (Pla d’en Boet)' },
-  { id: 'boet-poligono-2', lat: 41.53350, lng: 2.43490, type: 'descarga', busy: true, vertical: false, street: 'Carrer de Carrasco i Formiguera (C/D)' },
+  { id: 'boet-poligono-2', lat: 41.53350, lng: 2.43490, type: 'descarga', busy: true, vertical: false, street: 'Carrer de Carrasco i Formiguera (DUM Boet)' },
 
   // --- CERDANYOLA / PERAMÀS / CAMÍ DE LA SERRA ---
-  { id: 'solar-tarradellas', lat: 41.54670, lng: 2.43210, type: 'gratuita', busy: false, vertical: false, street: 'Solar Ronda de Josep Tarradellas', capacity: 298 },
+  { id: 'solar-tarradellas', lat: 41.54670, lng: 2.43210, type: 'gratuita', busy: false, vertical: false, street: 'Ronda de Josep Tarradellas', capacity: 298 },
   { id: 'solar-sorrall', lat: 41.54580, lng: 2.43350, type: 'gratuita', busy: false, vertical: false, street: 'Zona Esportiva El Sorrall', capacity: 80 },
-  { id: 'cerdanyola-puig-1', lat: 41.54320, lng: 2.42980, type: 'gratuita', busy: false, vertical: false, street: 'Avinguda de Puig i Cadafalch' },
-  { id: 'cerdanyola-puig-2', lat: 41.54450, lng: 2.42850, type: 'gratuita', busy: true, vertical: true, street: 'Passeig Ramon Berenguer III' },
-  { id: 'cerdanyola-gatassa', lat: 41.54190, lng: 2.42690, type: 'gratuita', busy: false, vertical: false, street: 'Carrer de la Gatassa' },
+  { id: 'cerdanyola-puig-1', lat: 41.54320, lng: 2.42980, type: 'gratuita', busy: false, vertical: false, street: 'Avinguda de Puig i Cadafalch (Cerdanyola)' },
+  { id: 'cerdanyola-puig-2', lat: 41.54450, lng: 2.42850, type: 'gratuita', busy: true, vertical: true, street: 'Passeig Ramon Berenguer III (Batería)' },
+  { id: 'cerdanyola-gatassa', lat: 41.54190, lng: 2.42690, type: 'gratuita', busy: false, vertical: false, street: 'Carrer de la Gatassa · Parc Cerdanyola' },
   { id: 'peramas-ronda', lat: 41.54250, lng: 2.43680, type: 'gratuita', busy: false, vertical: false, street: 'Ronda d’O’Donnell (Peramàs)' },
 
   // --- HOSPITAL DE MATARÓ / MATARÓ PARC / CIRERA / MOLINS ---
@@ -77,19 +72,19 @@ export const SPOTS: Spot[] = [
   { id: 'mp-ext-2', lat: 41.55350, lng: 2.43420, type: 'gratuita', busy: true, vertical: false, street: 'Carrer d’Estrasburg (Mataró Parc)' },
   { id: 'mp-ev', lat: 41.55480, lng: 2.43280, type: 'carga', busy: false, vertical: false, street: 'Electrolinera Mataró Parc' },
   { id: 'solar-triangle-molins', lat: 41.54890, lng: 2.43540, type: 'gratuita', busy: false, vertical: false, street: 'Aparcamiento Triangle Molins', capacity: 350 },
-  { id: 'cirera-carretera', lat: 41.55380, lng: 2.43990, type: 'gratuita', busy: false, vertical: false, street: 'Carretera de Cirera' },
+  { id: 'cirera-carretera', lat: 41.55380, lng: 2.43990, type: 'gratuita', busy: false, vertical: false, street: 'Carretera de Cirera · Centre Cívic' },
 
   // --- ROCAFONDA / EL PALAU / VISTA ALEGRE / ESCORXADOR ---
   { id: 'rocafonda-peru-1', lat: 41.54850, lng: 2.45180, type: 'gratuita', busy: false, vertical: false, street: 'Avinguda del Perú (Rocafonda)' },
-  { id: 'rocafonda-peru-2', lat: 41.54940, lng: 2.45310, type: 'gratuita', busy: true, vertical: true, street: 'Carrer de Pablo Picasso (Rocafonda)' },
+  { id: 'rocafonda-peru-2', lat: 41.54940, lng: 2.45310, type: 'gratuita', busy: true, vertical: true, street: 'Carrer de Pablo Picasso (Batería)' },
   { id: 'palau-escorsador', lat: 41.54520, lng: 2.44890, type: 'gratuita', busy: false, vertical: false, street: 'Carrer de Miquel Biada (El Palau)' },
   { id: 'vista-alegre-1', lat: 41.55250, lng: 2.44650, type: 'gratuita', busy: false, vertical: false, street: 'Carretera de Mata (Vista Alegre)' },
   { id: 'vista-alegre-2', lat: 41.55140, lng: 2.44520, type: 'gratuita', busy: true, vertical: false, street: 'Parc de Rocafonda / Vista Alegre' },
-  { id: 'girona-01', lat: 41.54610, lng: 2.43510, type: 'gratuita', busy: false, vertical: false, street: 'Carrer de Girona' },
-  { id: 'girona-02', lat: 41.54690, lng: 2.43580, type: 'gratuita', busy: true, vertical: false, street: 'Carrer de Girona' },
+  { id: 'girona-01', lat: 41.54610, lng: 2.43510, type: 'gratuita', busy: false, vertical: false, street: 'Carrer de Girona · Tramo Norte' },
+  { id: 'girona-02', lat: 41.54690, lng: 2.43580, type: 'gratuita', busy: true, vertical: false, street: 'Carrer de Girona · Tramo Sur' },
 ]
 
-// Consulta aparcaments reals d'OpenStreetMap i valida amb OSRM que estiguin al costat d'un vial asfaltat (mai al mar ni a la sorra)
+// Consulta EXCLUSIVAMENTE zonas de aparcamiento reales mapeadas en OpenStreetMap (sin inventar puntos en calles)
 export async function fetchRealSpotsNear(
   dest: Coords & { name: string },
   radiusMeters = 500,
@@ -100,107 +95,67 @@ export async function fetchRealSpotsNear(
 
   const combined: Spot[] = [...localMatches]
 
-  const tryAddSpot = (candidate: Spot, minGap = 20) => {
+  const tryAddSpot = (candidate: Spot) => {
     if (distanceBetweenCoords(dest, { lat: candidate.lat, lng: candidate.lng }) > radiusMeters) return
-    const tooClose = combined.some(
-      (m) => distanceBetweenCoords({ lat: candidate.lat, lng: candidate.lng }, { lat: m.lat, lng: m.lng }) < minGap,
+    const alreadyExists = combined.some(
+      (m) => distanceBetweenCoords({ lat: candidate.lat, lng: candidate.lng }, { lat: m.lat, lng: m.lng }) < 25,
     )
-    if (!tooClose) combined.push(candidate)
+    if (!alreadyExists) combined.push(candidate)
   }
 
-  const query = `[out:json][timeout:6];(node["amenity"="parking"](around:${radiusMeters},${dest.lat},${dest.lng});way["amenity"="parking"](around:${radiusMeters},${dest.lat},${dest.lng});node["amenity"="parking_space"](around:${radiusMeters},${dest.lat},${dest.lng});node["amenity"="charging_station"](around:${radiusMeters},${dest.lat},${dest.lng});node["amenity"="motorcycle_parking"](around:${radiusMeters},${dest.lat},${dest.lng});way["parking:both"]["highway"!~"^(trunk|primary)$"](around:${radiusMeters},${dest.lat},${dest.lng});way["parking:left"]["highway"!~"^(trunk|primary)$"](around:${radiusMeters},${dest.lat},${dest.lng});way["parking:right"]["highway"!~"^(trunk|primary)$"](around:${radiusMeters},${dest.lat},${dest.lng}););out center;`
+  try {
+    const query = `[out:json][timeout:10];(node["amenity"="parking"](around:${radiusMeters},${dest.lat},${dest.lng});way["amenity"="parking"](around:${radiusMeters},${dest.lat},${dest.lng});way["parking"="street_side"](around:${radiusMeters},${dest.lat},${dest.lng});way["parking:lane:both"~"parallel|diagonal|perpendicular"](around:${radiusMeters},${dest.lat},${dest.lng});way["parking:lane:left"~"parallel|diagonal|perpendicular"](around:${radiusMeters},${dest.lat},${dest.lng});way["parking:lane:right"~"parallel|diagonal|perpendicular"](around:${radiusMeters},${dest.lat},${dest.lng});node["amenity"="charging_station"](around:${radiusMeters},${dest.lat},${dest.lng});node["amenity"="motorcycle_parking"](around:${radiusMeters},${dest.lat},${dest.lng}););out center;`
 
-  const endpoints = [
-    'https://overpass-api.de/api/interpreter',
-    'https://overpass.kumi.systems/api/interpreter',
-    'https://overpass.private.coffee/api/interpreter',
-  ]
+    const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`
+    const res = await fetch(url)
+    if (!res.ok) return combined
 
-  for (const url of endpoints) {
-    try {
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 5000)
+    const data = await res.json()
+    const elements = Array.isArray(data?.elements) ? data.elements : []
 
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
-        body: `data=${encodeURIComponent(query)}`,
-        signal: controller.signal,
+    elements.forEach((el: any, idx: number) => {
+      const lat = el.lat ?? el.center?.lat
+      const lng = el.lon ?? el.center?.lon
+      if (typeof lat !== 'number' || typeof lng !== 'number') return
+
+      const tags = el.tags || {}
+      let type: SpotType = 'gratuita'
+      if (tags.amenity === 'charging_station') {
+        type = 'carga'
+      } else if (tags.amenity === 'motorcycle_parking') {
+        type = 'moto'
+      } else if (
+        tags.fee === 'yes' ||
+        tags.parking === 'underground' ||
+        tags.parking === 'multi-storey'
+      ) {
+        type = 'pago'
+      } else if (tags['capacity:disabled'] && !tags.capacity) {
+        type = 'movilidad'
+      }
+
+      const streetName =
+        tags.name ||
+        tags['addr:street'] ||
+        (tags.parking === 'street_side'
+          ? `Aparcamiento en calzada · ${dest.name}`
+          : `Zona de aparcamiento · ${dest.name}`)
+
+      const numericId = Number(el.id || idx)
+
+      tryAddSpot({
+        id: `osm-real-${el.type}-${el.id}`,
+        lat,
+        lng,
+        type,
+        busy: numericId % 3 === 0,
+        vertical: tags.parking === 'street_side' || idx % 2 === 1,
+        street: streetName,
+        capacity: tags.capacity ? Number(tags.capacity) : undefined,
       })
-      clearTimeout(timeoutId)
-
-      if (!res.ok) continue
-      const data = await res.json()
-      const elements = Array.isArray(data?.elements) ? data.elements : []
-
-      await Promise.all(
-        elements.slice(0, 60).map(async (el: any) => {
-          const rawLat = el.lat ?? el.center?.lat
-          const rawLng = el.lon ?? el.center?.lon
-          if (typeof rawLat !== 'number' || typeof rawLng !== 'number') return
-
-          const tags = el.tags || {}
-          const parkingTags = [tags['parking:both'], tags['parking:left'], tags['parking:right']]
-            .filter(Boolean)
-            .join(' ')
-            .toLowerCase()
-
-          if (parkingTags === 'no' || parkingTags.includes('no_parking') || parkingTags.includes('no_stopping')) {
-            return
-          }
-
-          // Comprovar contra la xarxa viària que el punt no caigui al mar ni a la platja
-          let finalLat = rawLat
-          let finalLng = rawLng
-          let nearestRoad = ''
-          try {
-            const snapRes = await fetch(
-              `https://router.project-osrm.org/nearest/v1/driving/${rawLng},${rawLat}?number=1`,
-            )
-            const snapData = await snapRes.json()
-            const wp = snapData?.waypoints?.[0]
-            if (!wp?.location || wp.distance > 45) return // Descartar si és a l'aigua o lluny de qualsevol accés rodat
-            if (wp.distance > 18) {
-              // Ajustar el centroide d'un pàrquing gran a la seva entrada asfaltada
-              finalLng = wp.location[0]
-              finalLat = wp.location[1]
-            }
-            nearestRoad = wp.name || ''
-          } catch {
-            // Si falla la comprovació puntual, mantenim la coordenada original
-          }
-
-          let type: SpotType = 'gratuita'
-          if (tags.amenity === 'charging_station') type = 'carga'
-          else if (tags.amenity === 'motorcycle_parking') type = 'moto'
-          else if (tags.fee === 'yes' || tags.parking === 'underground' || tags.parking === 'multi-storey') {
-            type = 'pago'
-          } else if (tags['capacity:disabled'] && !tags.capacity) {
-            type = 'movilidad'
-          }
-
-          const streetName =
-            tags.name ||
-            tags['addr:street'] ||
-            (nearestRoad ? `Aparcament · ${nearestRoad}` : `Aparcament real · ${dest.name}`)
-
-          tryAddSpot({
-            id: `osm-real-${el.type}-${el.id}`,
-            lat: finalLat,
-            lng: finalLng,
-            type,
-            busy: false,
-            vertical: parkingTags.includes('perpendicular') || parkingTags.includes('diagonal'),
-            street: streetName,
-            capacity: tags.capacity ? Number(tags.capacity) : undefined,
-          })
-        }),
-      )
-
-      break
-    } catch {
-      // Provar el següent servidor Overpass
-    }
+    })
+  } catch {
+    return combined
   }
 
   return combined
